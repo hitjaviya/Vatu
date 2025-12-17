@@ -1,0 +1,49 @@
+{
+    "name": "@chat-app/desktop",
+    "version": "1.0.0",
+    "description": "Desktop chat application built with Electron",
+    "main": "main.js",
+    "scripts": {
+        "dev": "concurrently \"npm run dev:react\" \"npm run dev:electron\"",
+        "dev:react": "vite",
+        "dev:electron": "wait-on http://localhost:5173 && electron .",
+        "build": "vite build && electron-builder",
+        "preview": "vite preview"
+    },
+    "build": {
+        "appId": "com.chatapp.desktop",
+        "productName": "ChatApp",
+        "directories": {
+            "output": "dist"
+        },
+        "files": [
+            "build/**/*",
+            "main.js",
+            "preload.js"
+        ],
+        "win": {
+            "target": "nsis",
+            "icon": "assets/icon.png"
+        },
+        "mac": {
+            "target": "dmg",
+            "icon": "assets/icon.png"
+        },
+        "linux": {
+            "target": "AppImage",
+            "icon": "assets/icon.png"
+        }
+    },
+    "dependencies": {
+        "@chat-app/shared": "*",
+        "electron-squirrel-startup": "^1.0.0"
+    },
+    "devDependencies": {
+        "@vitejs/plugin-react": "^4.2.1",
+        "concurrently": "^8.2.2",
+        "electron": "^39.2.3",
+        "electron-builder": "^24.9.1",
+        "vite": "^7.2.4",
+        "wait-on": "^7.2.0"
+    }
+}

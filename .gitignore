@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+out/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Electron
+packages/desktop/dist/
+packages/desktop/out/
+
+# Uploads
+packages/server/uploads/*
+!packages/server/uploads/.gitkeep
+
+# Testing
+coverage/
+.nyc_output/

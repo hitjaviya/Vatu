@@ -1,0 +1,26 @@
+{
+  "name": "chat-app",
+  "version": "1.0.0",
+  "description": "Cross-platform chat application with file sharing and group functionality",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev --workspace=packages/server",
+    "dev:desktop": "npm run dev --workspace=packages/desktop",
+    "dev:web": "npm run dev --workspace=packages/web",
+    "build:desktop": "npm run build --workspace=packages/desktop",
+    "build:web": "npm run build --workspace=packages/web",
+    "start:server": "npm run start --workspace=packages/server"
+  },
+  "keywords": [
+    "chat",
+    "electron",
+    "react",
+    "socket.io",
+    "cross-platform"
+  ],
+  "author": "",
+  "license": "MIT"
+}
