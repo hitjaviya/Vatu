@@ -1,6 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
+const config = require('../config/config');
 const User = require('../models/User');
 
 const router = express.Router();
@@ -39,8 +40,8 @@ router.post('/register',
             // Generate JWT token
             const token = jwt.sign(
                 { userId: user._id },
-                process.env.JWT_SECRET,
-                { expiresIn: '7d' }
+                config.jwtSecret,
+                { expiresIn: config.jwtExpire }
             );
 
             res.status(201).json({
@@ -95,8 +96,8 @@ router.post('/login',
             // Generate JWT token
             const token = jwt.sign(
                 { userId: user._id },
-                process.env.JWT_SECRET,
-                { expiresIn: '7d' }
+                config.jwtSecret,
+                { expiresIn: config.jwtExpire }
             );
 
             res.json({

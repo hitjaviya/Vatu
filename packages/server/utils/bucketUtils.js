@@ -91,7 +91,8 @@ const formatMessage = (message, options = {}) => {
         type: message.type,
         createdAt: message.createdAt,
         read: message.read || false,
-        readAt: message.readAt || null
+        readAt: message.readAt || null,
+        replyTo: message.replyTo || null
     };
 
     // Add file-related fields if present

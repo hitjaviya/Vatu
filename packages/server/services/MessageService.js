@@ -26,6 +26,7 @@ class MessageService {
      * @param {String} messageData.fileUrl - File URL (if applicable)
      * @param {String} messageData.fileName - File name (if applicable)
      * @param {Number} messageData.fileSize - File size (if applicable)
+     * @param {String} messageData.replyTo - Message ID being replied to (if applicable)
      * @returns {Promise<Object>} Saved message
      */
     static async sendMessage(messageData) {

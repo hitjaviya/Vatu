@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5000/api';
+// Environment-based API URL using Vite environment variables
+// Vite automatically loads .env.development or .env.production based on the build mode
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // Create axios instance
 const api = axios.create({
@@ -31,6 +33,8 @@ export const usersAPI = {
     getById: (userId) => api.get(`/users/${userId}`),
     updateProfile: (data) => api.patch('/users/profile', data),
     updateStatus: (status) => api.patch('/users/status', { status }),
+    changeEmail: (email) => api.patch('/users/change-email', { email }),
+    changePassword: (currentPassword, newPassword) => api.patch('/users/change-password', { currentPassword, newPassword }),
 };
 
 // Messages API

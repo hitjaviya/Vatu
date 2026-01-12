@@ -8,8 +8,10 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups }) {
     const [loading, setLoading] = useState(false);
     const [typing, setTyping] = useState(false);
     const [previewImage, setPreviewImage] = useState(null);
+    const [replyingTo, setReplyingTo] = useState(null);
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
+    const inputRef = useRef(null);
     const typingTimeoutRef = useRef(null);
 
     // Fetch messages when chat changes
@@ -121,11 +123,20 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups }) {
         const content = newMessage.trim();
         setNewMessage('');
         try {
+            const messageData = {
+                content,
+                type: 'text',
+                ...(replyingTo && { replyTo: replyingTo._id || replyingTo.id })
+            };
+
+            console.log('Sending message with replyTo:', messageData);
+
             if (selectedChat.type === 'user') {
-                socket && socket.emit('message:send', { recipientId: selectedChat.id, content, type: 'text' });
+                socket && socket.emit('message:send', { recipientId: selectedChat.id, ...messageData });
             } else {
-                socket && socket.emit('group:message', { groupId: selectedChat.id, content, type: 'text' });
+                socket && socket.emit('group:message', { groupId: selectedChat.id, ...messageData });
             }
+            setReplyingTo(null);
         } catch (error) {
             console.error('Error sending message:', error);
         }
@@ -157,8 +168,11 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups }) {
                 type: type || 'file',
                 fileUrl,
                 fileName,
-                fileSize
+                fileSize,
+                ...(replyingTo && { replyTo: replyingTo._id || replyingTo.id })
             };
+
+            console.log('Sending file with replyTo:', messageData);
 
             if (selectedChat.type === 'user') {
                 socket && socket.emit('message:send', {
@@ -171,6 +185,7 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups }) {
                     ...messageData
                 });
             }
+            setReplyingTo(null);
         } catch (error) {
             console.error('Error uploading file:', error);
         }
@@ -252,6 +267,35 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups }) {
         return 'Unknown User';
     };
 
+    const findRepliedMessage = (messageId) => {
+        if (!messageId) return null;
+        // Handle both string and ObjectId comparison
+        return messages.find(m => {
+            const mId = m._id || m.id;
+            return mId && (mId.toString() === messageId.toString() || mId === messageId);
+        });
+    };
+
+    const handleReply = (msg) => {
+        setReplyingTo(msg);
+        // Auto-focus input when replying
+        setTimeout(() => {
+            inputRef.current?.focus();
+        }, 100);
+    };
+
+    const handleScrollToMessage = (messageId) => {
+        const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
+        if (messageElement) {
+            messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Highlight the message briefly
+            messageElement.classList.add('highlight-message');
+            setTimeout(() => {
+                messageElement.classList.remove('highlight-message');
+            }, 2000);
+        }
+    };
+
     if (!selectedChat) {
         return (
             <div className="chat-window empty">
@@ -300,13 +344,28 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups }) {
 
                             // Check if we should show sender info (first message or sender changed)
                             const prevSenderId = idx > 0 ? (typeof messages[idx - 1].sender === 'object' ? messages[idx - 1].sender._id : messages[idx - 1].sender) : null;
-                            console.log("p", prevSenderId);
-                            console.log("s", senderId);
-                            const showSenderName = idx === 0 || prevSenderId !== senderId;
-                            const showAvatar = !isOwn && showSenderName;
+                            const nextSenderId = idx < messages.length - 1 ? (typeof messages[idx + 1].sender === 'object' ? messages[idx + 1].sender._id : messages[idx + 1].sender) : null;
+
+                            const isFirstInGroup = prevSenderId !== senderId;
+                            const isLastInGroup = nextSenderId !== senderId;
+                            const isMiddleInGroup = !isFirstInGroup && !isLastInGroup;
+                            const isSingleMessage = isFirstInGroup && isLastInGroup;
+
+                            const showSenderName = isFirstInGroup;
+                            const showAvatar = !isOwn && isFirstInGroup;
+
+                            let groupClass = 'msg-single';
+                            if (isSingleMessage) groupClass = 'msg-single';
+                            else if (isFirstInGroup) groupClass = 'msg-start';
+                            else if (isMiddleInGroup) groupClass = 'msg-middle';
+                            else if (isLastInGroup) groupClass = 'msg-end';
 
                             return (
-                                <div key={idx} className={`message ${isOwn ? 'own' : 'other'}`}>
+                                <div 
+                                    key={idx} 
+                                    className={`message ${isOwn ? 'own' : 'other'} ${groupClass}`}
+                                    data-message-id={msg._id || msg.id}
+                                >
                                     {showAvatar && (
                                         <div className="message-avatar">
                                             <span>{getInitials(getSenderDisplayName(msg, false))}</span>
@@ -320,8 +379,37 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups }) {
                                         )}
                                         {msg.type === 'text' ? (
                                             <div className="message-bubble">
+                                                {msg.replyTo && (() => {
+                                                    const repliedMsg = findRepliedMessage(msg.replyTo);
+                                                    if (repliedMsg) {
+                                                        const repliedSenderId = typeof repliedMsg.sender === 'object' ? repliedMsg.sender._id : repliedMsg.sender;
+                                                        const repliedIsOwn = repliedMsg.senderId === currentUser.id || repliedSenderId === currentUser.id;
+                                                        return (
+                                                            <div 
+                                                                className="replied-message" 
+                                                                onClick={() => handleScrollToMessage(msg.replyTo)}
+                                                                title="Click to jump to original message"
+                                                            >
+                                                                <div className="replied-message-header">
+                                                                    {getSenderDisplayName(repliedMsg, repliedIsOwn)}
+                                                                </div>
+                                                                <div className="replied-message-content">
+                                                                    {repliedMsg.type === 'text' ? repliedMsg.content : `📎 ${repliedMsg.fileName || 'File'}`}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    }
+                                                })()}
                                                 <p>{msg.content}</p>
-                                                <span className="message-time">{formatTime(msg.timestamp || msg.createdAt)}</span>
+                                                <div className="message-actions">
+                                                    <button className="reply-button" onClick={() => handleReply(msg)} title="Reply">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                            <polyline points="9 14 4 9 9 4"></polyline>
+                                                            <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
+                                                        </svg>
+                                                    </button>
+                                                    <span className="message-time">{formatTime(msg.timestamp || msg.createdAt)}</span>
+                                                </div>
                                             </div>
                                         ) : (
                                             <div className="message-file">
@@ -400,6 +488,30 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups }) {
 
             {/* Input */}
             <div className="message-input-container">
+                {replyingTo && (
+                    <div className="reply-preview">
+                        <div className="reply-preview-header">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <polyline points="9 14 4 9 9 4"></polyline>
+                                <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
+                            </svg>
+                            <span>Replying to {(() => {
+                                const repliedSenderId = typeof replyingTo.sender === 'object' ? replyingTo.sender._id : replyingTo.sender;
+                                const repliedIsOwn = replyingTo.senderId === currentUser.id || repliedSenderId === currentUser.id;
+                                return getSenderDisplayName(replyingTo, repliedIsOwn);
+                            })()}</span>
+                            <button className="cancel-reply" onClick={() => setReplyingTo(null)} title="Cancel reply">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
+                        </div>
+                        <div className="reply-preview-content">
+                            {replyingTo.type === 'text' ? replyingTo.content : `📎 ${replyingTo.fileName || 'File'}`}
+                        </div>
+                    </div>
+                )}
                 <form className="message-input-form" onSubmit={handleSendMessage}>
                     <button type="button" className="attach-button" onClick={() => fileInputRef.current?.click()}>
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -407,6 +519,7 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups }) {
                         </svg>
                     </button>
                     <input
+                        ref={inputRef}
                         type="text"
                         className="message-input"
                         placeholder="Type a message..."

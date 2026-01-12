@@ -86,6 +86,12 @@
     color: var(--text-tertiary);
 }
 
+.header-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.settings-button,
 .logout-button {
     width: 36px;
     height: 36px;
@@ -98,6 +104,7 @@
     flex-shrink: 0;
 }
 
+.settings-button:hover,
 .logout-button:hover {
     background: var(--bg-hover);
     color: var(--text-primary);

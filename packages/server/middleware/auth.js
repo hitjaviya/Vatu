@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const config = require('../config/config');
 const User = require('../models/User');
 
 // Middleware to authenticate HTTP requests
@@ -10,7 +11,7 @@ const authenticate = async (req, res, next) => {
             return res.status(401).json({ error: 'Authentication required' });
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.verify(token, config.jwtSecret);
         const user = await User.findById(decoded.userId);
 
         if (!user) {
@@ -28,7 +29,7 @@ const authenticate = async (req, res, next) => {
 // Authenticate Socket.io connections
 const authenticateSocket = async (token) => {
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.verify(token, config.jwtSecret);
         const user = await User.findById(decoded.userId);
         return user;
     } catch (error) {

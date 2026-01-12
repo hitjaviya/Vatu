@@ -3,6 +3,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const config = require('./config/config');
 const connectDB = require('./config/database');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
@@ -21,7 +22,7 @@ const server = http.createServer(app);
 // Initialize Socket.io with CORS
 const io = socketIo(server, {
   cors: {
-    origin: ['http://localhost:3000', 'http://localhost:5173'],
+    origin: config.corsOrigins,
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -29,7 +30,7 @@ const io = socketIo(server, {
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:5173'],
+  origin: config.corsOrigins,
   credentials: true
 }));
 app.use(express.json());
@@ -84,7 +85,10 @@ io.on('connection', (socket) => {
   // Send private message
   socket.on('message:send', async (data) => {
     try {
-      const { recipientId, content, type, fileUrl, fileName, fileSize } = data;
+      console.log('Full data received:', JSON.stringify(data, null, 2));
+      const { recipientId, content, type, fileUrl, fileName, fileSize, replyTo } = data;
+
+      console.log('Received message:send with replyTo:', replyTo);
 
       if (!socket.userId) {
         socket.emit('error', { message: 'Not authenticated' });
@@ -99,8 +103,11 @@ io.on('connection', (socket) => {
         type: type || 'text',
         fileUrl,
         fileName,
-        fileSize
+        fileSize,
+        replyTo
       });
+
+      console.log('Saved message with replyTo:', savedMessage.replyTo);
 
       const recipientSocketId = onlineUsers.get(recipientId);
 
@@ -146,7 +153,9 @@ io.on('connection', (socket) => {
   // Group message
   socket.on('group:message', async (data) => {
     try {
-      const { groupId, content, type, fileUrl, fileName, fileSize } = data;
+      const { groupId, content, type, fileUrl, fileName, fileSize, replyTo } = data;
+
+      console.log('Received group:message with replyTo:', replyTo);
 
       if (!socket.userId) {
         socket.emit('error', { message: 'Not authenticated' });
@@ -161,7 +170,8 @@ io.on('connection', (socket) => {
         type: type || 'text',
         fileUrl,
         fileName,
-        fileSize
+        fileSize,
+        replyTo
       });
 
       const messageData = {
@@ -200,10 +210,12 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 5000;
+const PORT = config.port;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Server URL: ${config.serverUrl}`);
+  console.log(`Client URL: ${config.clientUrl}`);
 });
 
 module.exports = { app, io };

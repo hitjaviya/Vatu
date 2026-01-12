@@ -3,6 +3,7 @@ import { useAuth } from '@chat-app/shared/hooks/useAuth';
 import { usersAPI, groupsAPI, messagesAPI } from '@chat-app/shared/api';
 import Sidebar from './Sidebar';
 import ChatWindow from './ChatWindow';
+import Settings from './Settings';
 import './ChatLayout.css';
 
 function ChatLayout({ socket, connected }) {
@@ -12,6 +13,7 @@ function ChatLayout({ socket, connected }) {
     const [selectedChat, setSelectedChat] = useState(null);
     const [onlineUsers, setOnlineUsers] = useState(new Set());
     const [unreadCounts, setUnreadCounts] = useState({});
+    const [showSettings, setShowSettings] = useState(false);
 
     // Fetch users and groups
     useEffect(() => {
@@ -139,6 +141,7 @@ function ChatLayout({ socket, connected }) {
                 connected={connected}
                 unreadCounts={unreadCounts}
                 onRefreshGroups={fetchGroups}
+                onOpenSettings={() => setShowSettings(true)}
             />
 
             <ChatWindow
@@ -146,6 +149,12 @@ function ChatLayout({ socket, connected }) {
                 currentUser={user}
                 socket={socket}
                 onRefreshGroups={fetchGroups}
+            />
+
+            <Settings 
+                isOpen={showSettings} 
+                onClose={() => setShowSettings(false)}
+                currentUser={user}
             />
         </div>
     );

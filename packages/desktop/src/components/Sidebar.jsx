@@ -12,7 +12,8 @@ function Sidebar({
     onlineUsers,
     connected,
     unreadCounts = {},
-    onRefreshGroups
+    onRefreshGroups,
+    onOpenSettings
 }) {
     const [activeTab, setActiveTab] = useState('chats');
     const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -51,13 +52,22 @@ function Sidebar({
                     </div>
                 </div>
 
-                <button className="logout-button" onClick={onLogout} title="Logout">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                        <polyline points="16 17 21 12 16 7" />
-                        <line x1="21" y1="12" x2="9" y2="12" />
-                    </svg>
-                </button>
+                <div className="header-actions">
+                    <button className="settings-button" onClick={onOpenSettings} title="Theme Settings">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="3" />
+                            <path d="M12 1v6m0 6v6m8.5-11.3l-5.2 3M8.7 15.7l-5.2 3m0-13.4l5.2 3M15.3 15.7l-5.2 3" />
+                        </svg>
+                    </button>
+
+                    <button className="logout-button" onClick={onLogout} title="Logout">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                            <polyline points="16 17 21 12 16 7" />
+                            <line x1="21" y1="12" x2="9" y2="12" />
+                        </svg>
+                    </button>
+                </div>
             </div>
 
             {/* Tabs */}

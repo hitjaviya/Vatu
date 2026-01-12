@@ -60,6 +60,10 @@ const conversationBucketSchema = new mongoose.Schema({
             default: false
         },
         readAt: Date,
+        replyTo: {
+            type: mongoose.Schema.Types.ObjectId,
+            default: null
+        },
         createdAt: {
             type: Date,
             default: Date.now
@@ -157,6 +161,7 @@ conversationBucketSchema.statics.addMessage = async function (conversationId, me
         fileUrl: messageData.fileUrl,
         fileName: messageData.fileName,
         fileSize: messageData.fileSize,
+        replyTo: messageData.replyTo || null,
         createdAt: new Date()
     });
 
