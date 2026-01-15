@@ -1,40 +1,133 @@
+# ================================
 # Dependencies
+# ================================
 node_modules/
 package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
-# Environment variables
+# ================================
+# Environment Variables (CRITICAL - NEVER COMMIT)
+# ================================
 .env
 .env.local
+.env.development.local
+.env.test.local
+.env.production.local
 .env.*.local
+*.env
 
-# Build outputs
+# ================================
+# Build Outputs
+# ================================
 dist/
 build/
 out/
+*.tsbuildinfo
+.cache/
 
+# ================================
 # Logs
+# ================================
 logs/
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
 
-# OS files
+# ================================
+# OS Files
+# ================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+Desktop.ini
 
-# IDE
+# ================================
+# IDE & Editor Files
+# ================================
 .vscode/
+.vscode/*
+!.vscode/extensions.json
 .idea/
+*.sublime-project
+*.sublime-workspace
 *.swp
 *.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.tmproj
+.history/
 
-# Electron
+# ================================
+# Electron Build Outputs
+# ================================
 packages/desktop/dist/
 packages/desktop/out/
+packages/desktop/release/
 
-# Uploads
+# ================================
+# User Uploads & Generated Content
+# ================================
 packages/server/uploads/*
 !packages/server/uploads/.gitkeep
+packages/server/temp/
 
-# Testing
+# ================================
+# Testing & Coverage
+# ================================
 coverage/
 .nyc_output/
+*.lcov
+.jest/
+test-results/
+playwright-report/
+.mocha/
+
+# ================================
+# Build & Development Scripts
+# ================================
+*.bat
+*.sh
+!scripts/*.sh 
+# Keep scripts in the scripts folder if needed
+
+# ================================
+# Documentation (Optional - Remove if you want to keep these)
+# ================================
+# DEPLOYMENT.md
+# DEPLOYMENT_RESOURCES.md
+# FEATURE_GUIDE.md
+# IMPLEMENTATION_SUMMARY.md
+
+# ================================
+# Temporary Files
+# ================================
+tmp/
+temp/
+*.tmp
+*.temp
+*.pid
+*.seed
+*.pid.lock
+
+# ================================
+# Miscellaneous
+# ================================
+.npm
+.eslintcache
+.stylelintcache
+.node_repl_history
+.yarn-integrity
+.pnp.*
+.pnp.js
