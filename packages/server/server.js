@@ -3,6 +3,10 @@ const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const dotenv = require('dotenv');
+
+// Load environment variables FIRST before importing config
+dotenv.config();
+
 const config = require('./config/config');
 const connectDB = require('./config/database');
 const authRoutes = require('./routes/auth');
@@ -11,9 +15,6 @@ const messageRoutes = require('./routes/messages');
 const groupRoutes = require('./routes/groups');
 const { authenticateSocket } = require('./middleware/auth');
 const MessageService = require('./services/MessageService');
-
-// Load environment variables
-dotenv.config();
 
 // Initialize Express app
 const app = express();
