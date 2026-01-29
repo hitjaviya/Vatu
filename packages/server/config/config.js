@@ -20,11 +20,11 @@ const config = {
         maxAvatarSize: parseInt(process.env.MAX_AVATAR_SIZE) || 2097152, // 2MB
     },
     production: {
-        serverUrl: process.env.SERVER_URL_PROD || 'http://13.62.127.219',
-        clientUrl: process.env.CLIENT_URL_PROD || 'http://13.62.127.219',
+        serverUrl: process.env.SERVER_URL_PROD || 'http://13.60.25.139',
+        clientUrl: process.env.CLIENT_URL_PROD || 'http://13.60.25.139',
         corsOrigins: process.env.CORS_ORIGIN 
             ? process.env.CORS_ORIGIN.split(',')
-            : ['http://13.62.127.219'],
+            : ['http://13.60.25.139'],
         mongodbUri: process.env.MONGODB_URI_PROD ,
         jwtSecret: process.env.JWT_SECRET_PROD ,
         jwtExpire: process.env.JWT_EXPIRE || '7d',

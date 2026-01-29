@@ -3,11 +3,21 @@
     "version": "1.0.0",
     "description": "Desktop chat application built with Electron",
     "main": "main.js",
+    "homepage": "https://github.com/hitjaviya/Vatu",
+    "author": {
+        "name": "ChatApp Team",
+        "email": "info@chatapp.com"
+    },
     "scripts": {
         "dev": "concurrently \"npm run dev:react\" \"npm run dev:electron\"",
+        "dev:prod": "concurrently \"npm run dev:react:prod\" \"npm run dev:electron\"",
         "dev:react": "vite",
+        "dev:react:prod": "vite --mode production",
         "dev:electron": "wait-on http://localhost:5173 && electron .",
-        "build": "vite build && electron-builder",
+        "build": "vite build --mode production && electron-builder",
+        "build:prod": "vite build --mode production",
+        "build:linux": "vite build --mode production && electron-builder --linux",
+        "build:win": "vite build --mode production && electron-builder --win",
         "preview": "vite preview"
     },
     "build": {
@@ -20,10 +30,14 @@
         "files": [
             "build/**/*",
             "main.js",
-            "preload.js"
+            "preload.js",
+            "public/**/*"
         ],
         "win": {
-            "target": "dir",
+            "target": [
+                "nsis",
+                "portable"
+            ],
             "icon": "assets/icon.png"
         },
         "mac": {
@@ -31,8 +45,10 @@
             "icon": "assets/icon.png"
         },
         "linux": {
-            "target": "AppImage",
-            "icon": "assets/icon.png"
+            "target": "deb",
+            "icon": "assets/icon.png",
+            "category": "Network",
+            "maintainer": "ChatApp Team <info@chatapp.com>"
         }
     },
     "dependencies": {

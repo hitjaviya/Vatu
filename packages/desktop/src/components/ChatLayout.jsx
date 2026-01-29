@@ -14,12 +14,27 @@ function ChatLayout({ socket, connected }) {
     const [onlineUsers, setOnlineUsers] = useState(new Set());
     const [unreadCounts, setUnreadCounts] = useState({});
     const [showSettings, setShowSettings] = useState(false);
+    const [isWindowFocused, setIsWindowFocused] = useState(true);
 
     // Fetch users and groups
     useEffect(() => {
         fetchUsers();
         fetchGroups();
         fetchUnreadCounts();
+    }, []);
+
+    // Track window focus state
+    useEffect(() => {
+        const handleFocus = () => setIsWindowFocused(true);
+        const handleBlur = () => setIsWindowFocused(false);
+
+        window.addEventListener('focus', handleFocus);
+        window.addEventListener('blur', handleBlur);
+
+        return () => {
+            window.removeEventListener('focus', handleFocus);
+            window.removeEventListener('blur', handleBlur);
+        };
     }, []);
 
     // Socket event listeners
@@ -44,8 +59,8 @@ function ChatLayout({ socket, connected }) {
 
         // Listen for new messages to update unread counts
         socket.on('message:receive', (message) => {
-            // Only increment unread count if this conversation is not currently open
-            if (!selectedChat || selectedChat.id !== message.senderId || selectedChat.type !== 'user') {
+            // Increment unread count if window is not focused OR this conversation is not currently open
+            if (!isWindowFocused || !selectedChat || selectedChat.id !== message.senderId || selectedChat.type !== 'user') {
                 setUnreadCounts(prev => ({
                     ...prev,
                     [message.senderId]: (prev[message.senderId] || 0) + 1
@@ -54,8 +69,8 @@ function ChatLayout({ socket, connected }) {
         });
 
         socket.on('group:message:receive', (message) => {
-            // Only increment unread count if this group is not currently open
-            if (!selectedChat || selectedChat.id !== message.groupId || selectedChat.type !== 'group') {
+            // Increment unread count if window is not focused OR this group is not currently open
+            if (!isWindowFocused || !selectedChat || selectedChat.id !== message.groupId || selectedChat.type !== 'group') {
                 setUnreadCounts(prev => ({
                     ...prev,
                     [message.groupId]: (prev[message.groupId] || 0) + 1
@@ -70,7 +85,7 @@ function ChatLayout({ socket, connected }) {
             socket.off('message:receive');
             socket.off('group:message:receive');
         };
-    }, [socket]);
+    }, [socket, selectedChat, isWindowFocused]);
 
     const fetchUsers = async () => {
         try {

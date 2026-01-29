@@ -5,7 +5,7 @@ import './Settings.css';
 const THEMES = {
     valentine: {
         name: '💕 Valentine',
-        background: 'url(./assets/backgrounds/valentine.png)',
+        background: 'url(/assets/backgrounds/valentine.png)',
         accent: '#ec4899',
         sent: '#ec4899',
         received: '#2d2d2d',
@@ -13,7 +13,7 @@ const THEMES = {
     },
     school: {
         name: '📚 School',
-        background: 'url(./assets/backgrounds/school.png)',
+        background: 'url(/assets/backgrounds/school.png)',
         accent: '#3b82f6',
         sent: '#3b82f6',
         received: '#2d2d2d',
@@ -21,7 +21,7 @@ const THEMES = {
     },
     chill: {
         name: '🌊 Chill',
-        background: 'url(./assets/backgrounds/chill.png)',
+        background: 'url(/assets/backgrounds/chill.png)',
         accent: '#06b6d4',
         sent: '#06b6d4',
         received: '#2d2d2d',
@@ -29,7 +29,7 @@ const THEMES = {
     },
     dark: {
         name: '🌙 Dark',
-        background: 'url(./assets/backgrounds/dark.png)',
+        background: 'url(/assets/backgrounds/dark.png)',
         accent: '#8b5cf6',
         sent: '#6366f1',
         received: '#27272a',
@@ -37,7 +37,7 @@ const THEMES = {
     },
     nature: {
         name: '🌿 Nature',
-        background: 'url(./assets/backgrounds/nature.png)',
+        background: 'url(/assets/backgrounds/nature.png)',
         accent: '#10b981',
         sent: '#10b981',
         received: '#2d2d2d',
@@ -45,7 +45,7 @@ const THEMES = {
     },
     sunset: {
         name: '🌅 Sunset',
-        background: 'url(./assets/backgrounds/sunset.png)',
+        background: 'url(/assets/backgrounds/sunset.png)',
         accent: '#f97316',
         sent: '#f97316',
         received: '#2d2d2d',

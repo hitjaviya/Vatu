@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 
-const SOCKET_URL = 'http://localhost:5000';
+// Use environment variable - automatically switches between dev and production
+const SOCKET_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
 
 export const useSocket = () => {
     const [socket, setSocket] = useState(null);

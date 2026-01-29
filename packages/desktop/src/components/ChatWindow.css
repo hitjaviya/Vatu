@@ -88,7 +88,7 @@
     display: flex;
     flex-direction: column;
     position: relative;
-    background-image: var(--chat-background);
+    background: var(--chat-background);
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
@@ -99,7 +99,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    background: rgba(15, 15, 15, 0.85);
+    background: rgba(15, 15, 15, 0.75);
     pointer-events: none;
     z-index: 0;
 }

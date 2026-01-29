@@ -4,7 +4,6 @@ const socketIo = require('socket.io');
 const cors = require('cors');
 const dotenv = require('dotenv');
 
-// Load environment variables FIRST before importing config
 dotenv.config();
 
 const config = require('./config/config');
