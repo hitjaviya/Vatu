@@ -1,0 +1,20 @@
+{
+    "name": "@chat-app/ui",
+    "version": "1.0.0",
+    "description": "Shared React UI component library (reused by desktop, web, mobile)",
+    "main": "src/index.js",
+    "scripts": {
+        "test": "echo \"No tests yet\""
+    },
+    "dependencies": {
+        "@chat-app/shared": "*"
+    },
+    "peerDependencies": {
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0"
+    },
+    "devDependencies": {
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0"
+    }
+}
