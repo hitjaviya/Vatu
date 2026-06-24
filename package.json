@@ -1,18 +1,21 @@
 {
   "name": "chat-app",
   "version": "1.0.0",
-  "description": "Cross-platform chat application with file sharing and group functionality",
+  "description": "Cross-platform chat application — monorepo",
   "private": true,
   "workspaces": [
+    "apps/*",
+    "services/*",
     "packages/*"
   ],
   "scripts": {
-    "dev:server": "npm run dev --workspace=packages/server",
-    "dev:desktop": "npm run dev --workspace=packages/desktop",
-    "dev:web": "npm run dev --workspace=packages/web",
-    "build:desktop": "npm run build --workspace=packages/desktop",
-    "build:web": "npm run build --workspace=packages/web",
-    "start:server": "npm run start --workspace=packages/server"
+    "dev:server":    "npm run dev   --workspace=services/server",
+    "dev:desktop":   "npm run dev   --workspace=apps/desktop",
+    "dev:web":       "npm run dev   --workspace=apps/web",
+    "dev:all":       "concurrently \"npm run dev:server\" \"npm run dev:desktop\"",
+    "build:desktop": "npm run build --workspace=apps/desktop",
+    "build:web":     "npm run build --workspace=apps/web",
+    "start:server":  "npm run start --workspace=services/server"
   },
   "keywords": [
     "chat",
@@ -22,5 +25,8 @@
     "cross-platform"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
 }

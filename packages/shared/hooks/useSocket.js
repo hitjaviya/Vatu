@@ -63,6 +63,16 @@ export const useSocket = () => {
             newSocket.on('auth:error', (error) => {
                 console.error('Socket auth error:', error);
                 setConnected(false);
+                
+                // If socket authentication fails, clear invalid session and force redirect to login
+                const hasToken = !!localStorage.getItem('token');
+                if (hasToken) {
+                    console.warn('Socket authentication failed. Clearing invalid session token...');
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    localStorage.removeItem('refreshToken');
+                    window.dispatchEvent(new Event('authChange'));
+                }
             });
         };
 

@@ -68,20 +68,25 @@ Desktop.ini
 .settings/
 *.tmproj
 .history/
+.antigravityignore
+.antigravity/*
+.github/*
+.artifacts/*
+.docs/*
 
 # ================================
 # Electron Build Outputs
 # ================================
-packages/desktop/dist/
-packages/desktop/out/
-packages/desktop/release/
+apps/desktop/dist/
+apps/desktop/out/
+apps/desktop/release/
 
 # ================================
 # User Uploads & Generated Content
 # ================================
-packages/server/uploads/*
-!packages/server/uploads/.gitkeep
-packages/server/temp/
+services/server/uploads/*
+!services/server/uploads/.gitkeep
+services/server/temp/
 
 # ================================
 # Testing & Coverage

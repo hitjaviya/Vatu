@@ -1,0 +1,41 @@
+const jwt = require('jsonwebtoken');
+const config = require('../config/config');
+const User = require('../models/User');
+
+// Middleware to authenticate HTTP requests
+const authenticate = async (req, res, next) => {
+    try {
+
+        const token = req.header('Authorization')?.replace('Bearer ', '');
+
+        if (!token) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        const decoded = jwt.verify(token, config.jwtSecret);
+        const user = await User.findById(decoded.userId);
+
+        if (!user) {
+            return res.status(401).json({ error: 'User not found' });
+        }
+
+        req.user = user;
+        req.token = token;
+        next();
+    } catch (error) {
+        res.status(401).json({ error: 'Invalid authentication token' });
+    }
+};
+
+// Authenticate Socket.io connections
+const authenticateSocket = async (token) => {
+    try {
+        const decoded = jwt.verify(token, config.jwtSecret);
+        const user = await User.findById(decoded.userId);
+        return user;
+    } catch (error) {
+        throw new Error('Invalid token');
+    }
+};
+
+module.exports = { authenticate, authenticateSocket };

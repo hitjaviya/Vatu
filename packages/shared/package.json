@@ -1,19 +1,27 @@
 {
     "name": "@chat-app/shared",
     "version": "1.0.0",
-    "description": "Shared React components and utilities",
+    "description": "Shared API helpers, hooks, and utilities (no UI components)",
     "main": "index.js",
+    "exports": {
+        ".":              "./index.js",
+        "./api":          "./api.js",
+        "./hooks/useAuth":   "./hooks/useAuth.js",
+        "./hooks/useSocket": "./hooks/useSocket.js"
+    },
     "scripts": {
         "test": "echo \"No tests yet\""
     },
     "dependencies": {
-        "react": "^18.2.0",
-        "react-dom": "^18.2.0",
-        "socket.io-client": "^4.6.1",
-        "axios": "^1.6.2"
+        "axios":          "^1.6.2",
+        "socket.io-client": "^4.6.1"
     },
     "peerDependencies": {
         "react": "^18.2.0",
+        "react-dom": "^18.2.0"
+    },
+    "devDependencies": {
+        "react":     "^18.2.0",
         "react-dom": "^18.2.0"
     }
 }
