@@ -10,12 +10,9 @@ pnpm-lock.yaml
 # Environment Variables (CRITICAL - NEVER COMMIT)
 # ================================
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env.*.local
-*.env
+.env.*
+!.env.example
+!.env.template
 
 # ================================
 # Build Outputs
@@ -69,10 +66,9 @@ Desktop.ini
 *.tmproj
 .history/
 .antigravityignore
-.antigravity/*
-.github/*
-.artifacts/*
-.docs/*
+.antigravity/
+artifacts/*
+!artifacts/.gitkeep
 
 # ================================
 # Electron Build Outputs
@@ -136,3 +132,11 @@ temp/
 .yarn-integrity
 .pnp.*
 .pnp.js
+
+# ================================
+# Python / Virtual Environments
+# ================================
+ag-env/
+venv/
+.venv/
+env/
