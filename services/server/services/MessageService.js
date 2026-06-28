@@ -1,6 +1,8 @@
 const ConversationBucket = require('../models/ConversationBucket');
 const Message = require('../models/Message');
 const Group = require('../models/Group');
+const S3Service = require('./S3Service');
+const SharedFile = require('../models/SharedFile');
 const {
     generateConversationId,
     generateGroupConversationId,
@@ -316,7 +318,34 @@ class MessageService {
             }
 
             const message = bucket.messages.id(messageId);
-            message.content = '[Message deleted]';
+            if (!message) {
+                throw new Error('Message not found');
+            }
+
+            // Cleanup uploaded document if exists
+            if (message.sharedFile) {
+                try {
+                    const sharedFile = await SharedFile.findById(message.sharedFile);
+                    if (sharedFile) {
+                        sharedFile.shareCount -= 1;
+                        if (sharedFile.shareCount <= 0) {
+                            // Delete from S3
+                            await S3Service.delete(sharedFile.s3Key);
+                            // Delete from MongoDB
+                            await SharedFile.findByIdAndDelete(sharedFile._id);
+                        } else {
+                            await sharedFile.save();
+                        }
+                    }
+                } catch (err) {
+                    console.error('Error cleaning up shared file on message deletion:', err);
+                }
+                message.sharedFile = null;
+            }
+
+            message.deleted = true;
+            message.deletedAt = new Date();
+            message.content = 'This message was deleted';
             message.type = 'deleted';
             message.fileUrl = null;
             message.fileName = null;

@@ -8,7 +8,6 @@
         "preview": "vite preview"
     },
     "dependencies": {
-        "@chat-app/ui":     "*",
         "@chat-app/shared": "*"
     },
     "devDependencies": {

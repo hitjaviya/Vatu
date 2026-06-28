@@ -1,44 +1,6 @@
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const config = require('../config/config');
-
-// Ensure upload directories exist
-const uploadDirs = {
-    avatars: path.join(__dirname, '../uploads/avatars'),
-    files: path.join(__dirname, '../uploads/files')
-};
-
-Object.values(uploadDirs).forEach(dir => {
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-});
-
-// Configure storage for avatars
-const avatarStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDirs.avatars);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const ext = path.extname(file.originalname);
-        cb(null, `avatar-${req.user._id}-${uniqueSuffix}${ext}`);
-    }
-});
-
-// Configure storage for general file uploads
-const fileStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDirs.files);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const ext = path.extname(file.originalname);
-        const sanitizedName = file.originalname.replace(ext, '').replace(/[^a-zA-Z0-9]/g, '_');
-        cb(null, `${sanitizedName}-${uniqueSuffix}${ext}`);
-    }
-});
 
 // File filter for images only (avatars)
 const imageFilter = (req, file, cb) => {
@@ -53,22 +15,14 @@ const imageFilter = (req, file, cb) => {
     }
 };
 
-// Multer middleware for avatar uploads
+// Multer middleware for avatar uploads using memory storage
 const uploadAvatar = multer({
-    storage: avatarStorage,
+    storage: multer.memoryStorage(),
     limits: {
-        fileSize: config.maxAvatarSize // 2MB by default
+        fileSize: config.maxAvatarSize || 2097152 // 2MB default
     },
     fileFilter: imageFilter
 }).single('avatar');
-
-// Multer middleware for general file uploads
-const uploadFile = multer({
-    storage: fileStorage,
-    limits: {
-        fileSize: config.maxFileSize // 10MB by default
-    }
-}).single('file');
 
 // Error handling wrapper
 const handleUploadError = (uploadMiddleware) => {
@@ -78,7 +32,7 @@ const handleUploadError = (uploadMiddleware) => {
                 if (err.code === 'LIMIT_FILE_SIZE') {
                     return res.status(400).json({ 
                         error: 'File too large',
-                        maxSize: err.field === 'avatar' ? config.maxAvatarSize : config.maxFileSize
+                        maxSize: config.maxAvatarSize || 2097152
                     });
                 }
                 return res.status(400).json({ error: err.message });
@@ -91,6 +45,5 @@ const handleUploadError = (uploadMiddleware) => {
 };
 
 module.exports = {
-    uploadAvatar: handleUploadError(uploadAvatar),
-    uploadFile: handleUploadError(uploadFile)
+    uploadAvatar: handleUploadError(uploadAvatar)
 };

@@ -1,6 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { messagesAPI, groupsAPI, filesAPI } from '@chat-app/shared/api';
 import './ChatWindow.css';
+import ChatHeader from './chat/ChatHeader';
+import MessageInput from './chat/MessageInput';
+import PinnedMessagesBar from './chat/PinnedMessagesBar';
+import MessageContextMenu from './chat/MessageContextMenu';
+import DeleteConfirmModal from './chat/modals/DeleteConfirmModal';
+import MessageInfoModal from './chat/modals/MessageInfoModal';
+import { useSocketEvents } from './chat/hooks/useSocketEvents';
+import {
+    normalizeMessage as _normalizeMessage,
+    formatTime,
+    formatFileSize,
+    getFileIcon,
+    getInitials,
+    getFullFileUrl
+} from './chat/utils/messageHelpers';
 
 function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWindowFocused, onUnreadMessageRead }) {
     const [messages, setMessages] = useState([]);
@@ -26,8 +41,13 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
     // Message info modal state
     const [msgInfoModal, setMsgInfoModal] = useState(null); // { message, info }
     const [msgInfoLoading, setMsgInfoLoading] = useState(false);
-    // Pinned message banner
-    const [pinnedMessage, setPinnedMessage] = useState(null);
+    // Pinned messages list
+    const [pinnedMessages, setPinnedMessages] = useState([]);
+    const [currentPinnedIndex, setCurrentPinnedIndex] = useState(0);
+    const [showAllPinned, setShowAllPinned] = useState(false);
+    // Delete confirmation modal: { message, scope } | null
+    const [deleteConfirm, setDeleteConfirm] = useState(null);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
     const messagesEndRef = useRef(null);
     const messagesContainerRef = useRef(null);
@@ -42,11 +62,14 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
     const currentUserRef = useRef(currentUser);
     const skipRef = useRef(0);
     const currentBucketRef = useRef(-1);
+    const isProgrammaticScrollRef = useRef(false);
 
     // Keep refs in sync with current props
     useEffect(() => { isWindowFocusedRef.current = isWindowFocused; }, [isWindowFocused]);
     useEffect(() => { selectedChatRef.current = selectedChat; }, [selectedChat]);
     useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+    const fetchPinnedMessagesRef = useRef(null);
+    useEffect(() => { fetchPinnedMessagesRef.current = fetchPinnedMessages; });
 
     // ============================================================================
     // HELPER FUNCTIONS
@@ -177,9 +200,22 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
         scrollToSearchResult(searchResults[prevIndex].idx);
     };
 
-    // ============================================================================
-    // DATA FETCHING
-    // ============================================================================
+    const fetchPinnedMessages = async () => {
+        if (!selectedChat) return;
+        try {
+            const params = {};
+            if (selectedChat.type === 'group') {
+                params.groupId = selectedChat.id;
+            } else {
+                params.userId = selectedChat.id;
+            }
+            const res = await messagesAPI.getPinnedMessages(params);
+            setPinnedMessages(res.data.pinnedMessages || []);
+            setCurrentPinnedIndex(0);
+        } catch (err) {
+            console.error('Error fetching pinned messages:', err);
+        }
+    };
 
     const fetchMessages = async (showLoading = true) => {
         if (!selectedChat) return;
@@ -308,8 +344,10 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
             setHasMoreMessages(true);
             currentBucketRef.current = -1;
             fetchMessages();
+            fetchPinnedMessages();
         } else {
             setMessages([]);
+            setPinnedMessages([]);
         }
         setTyping(false);
         observedMessageIdsRef.current.clear();
@@ -459,120 +497,17 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
         };
     }, [showNewMessagesBanner]);
 
-    useEffect(() => {
-        if (!socket) return;
-
-        const handleMessageReceive = (message) => {
-            const chat = selectedChatRef.current;
-            if (chat?.type === 'user' && message.senderId === chat.id) {
-                const normalized = normalizeMessage(message);
-                setMessages((prev) => [...prev, normalized]);
-                scrollToBottom();
-                socket.emit('message:read', {
-                    messageId: message._id || message.id,
-                    senderId: message.senderId,
-                    recipientId: currentUserRef.current.id
-                });
-            }
-        };
-
-        const handleMessageSent = (message) => {
-            const chat = selectedChatRef.current;
-            if (chat?.type === 'user' && message.recipientId === chat.id) {
-                setMessages((prev) => {
-                    if (message.tempId) {
-                        return prev.map(msg =>
-                            msg._id === message.tempId || msg.id === message.tempId
-                                ? { ...normalizeMessage(message), optimistic: false }
-                                : msg
-                        );
-                    }
-                    return [...prev, normalizeMessage(message)];
-                });
-                scrollToBottom();
-            }
-        };
-
-        const handleGroupMessageReceive = (message) => {
-            const chat = selectedChatRef.current;
-            if (chat?.type === 'group' && message.groupId === chat.id) {
-                setMessages((prev) => {
-                    if (message.tempId && message.senderId === currentUserRef.current.id) {
-                        return prev.map(msg =>
-                            msg._id === message.tempId || msg.id === message.tempId
-                                ? { ...normalizeMessage(message), optimistic: false }
-                                : msg
-                        );
-                    }
-                    const exists = prev.some(msg =>
-                        (msg._id && msg._id === message._id) || (msg.id && msg.id === message.id)
-                    );
-                    if (exists) return prev;
-                    return [...prev, normalizeMessage(message)];
-                });
-                scrollToBottom();
-                if (message.senderId !== currentUserRef.current.id) {
-                    socket.emit('group:message:read', {
-                        messageId: message._id || message.id,
-                        groupId: chat.id,
-                        userId: currentUserRef.current.id
-                    });
-                }
-            }
-        };
-
-        const handleTypingStart = ({ userId }) => {
-            const chat = selectedChatRef.current;
-            if (chat?.type === 'user' && userId === chat.id) {
-                setTyping(true);
-            }
-        };
-
-        const handleTypingStop = ({ userId }) => {
-            const chat = selectedChatRef.current;
-            if (chat?.type === 'user' && userId === chat.id) {
-                setTyping(false);
-            }
-        };
-
-        const handleMessageDelivered = ({ messageId, deliveredAt }) => {
-            setMessages((prev) =>
-                prev.map((msg) =>
-                    (msg._id === messageId || msg.id === messageId)
-                        ? { ...msg, delivered: true, deliveredAt }
-                        : msg
-                )
-            );
-        };
-
-        const handleMessageRead = ({ messageId, readAt }) => {
-            setMessages((prev) =>
-                prev.map((msg) =>
-                    (msg._id === messageId || msg.id === messageId)
-                        ? { ...msg, read: true, readAt }
-                        : msg
-                )
-            );
-        };
-
-        socket.on('message:receive', handleMessageReceive);
-        socket.on('message:sent', handleMessageSent);
-        socket.on('group:message:receive', handleGroupMessageReceive);
-        socket.on('typing:start', handleTypingStart);
-        socket.on('typing:stop', handleTypingStop);
-        socket.on('message:delivered', handleMessageDelivered);
-        socket.on('message:read', handleMessageRead);
-
-        return () => {
-            socket.off('message:receive', handleMessageReceive);
-            socket.off('message:sent', handleMessageSent);
-            socket.off('group:message:receive', handleGroupMessageReceive);
-            socket.off('typing:start', handleTypingStart);
-            socket.off('typing:stop', handleTypingStop);
-            socket.off('message:delivered', handleMessageDelivered);
-            socket.off('message:read', handleMessageRead);
-        };
-    }, [socket]);
+    // Delegate all socket event registration to the extracted hook
+    useSocketEvents({
+        socket,
+        selectedChatRef,
+        currentUserRef,
+        setMessages,
+        setTyping,
+        setFileDetailMsg,
+        onUnreadMessageRead,
+        onPinnedUpdate: fetchPinnedMessages,
+    });
 
     // ============================================================================
     // EVENT HANDLERS
@@ -794,9 +729,68 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
     const handleContextMenu = (e, msg) => {
         e.preventDefault();
         e.stopPropagation();
-        const x = Math.min(e.clientX, window.innerWidth - 200);
-        const y = Math.min(e.clientY, window.innerHeight - 280);
-        setContextMenu({ x, y, message: msg });
+        const menuWidth = 220;
+        const menuHeight = 320;
+
+        const bubble = e.currentTarget.querySelector('.message-bubble, .message-file') || e.currentTarget;
+        const bubbleRect = bubble.getBoundingClientRect();
+        const isOwn = isOwnMessage(msg);
+        let x;
+
+        if (isOwn) {
+            if (bubbleRect.left - menuWidth - 8 > 10) {
+                x = bubbleRect.left - menuWidth - 8;
+            } else {
+                x = bubbleRect.right + 8;
+            }
+        } else {
+            if (bubbleRect.right + menuWidth + 8 < window.innerWidth - 10) {
+                x = bubbleRect.right + 8;
+            } else {
+                x = bubbleRect.left - menuWidth - 8;
+            }
+        }
+        x = Math.max(10, Math.min(x, window.innerWidth - menuWidth - 10));
+
+        const bubbleCenterY = bubbleRect.top + (bubbleRect.height / 2);
+        let y = bubbleCenterY;
+        let transformOriginY = '0%';
+
+        const container = messagesContainerRef.current;
+        if (container) {
+            const containerRect = container.getBoundingClientRect();
+            const menuBottomY = y + menuHeight;
+            const spaceBelow = containerRect.bottom - menuBottomY;
+
+            if (spaceBelow < 20) {
+                const scrollNeeded = 20 - spaceBelow;
+                const maxScroll = container.scrollHeight - container.clientHeight - container.scrollTop;
+                const actualScroll = Math.max(0, Math.min(scrollNeeded, maxScroll));
+                
+                if (actualScroll > 0) {
+                    isProgrammaticScrollRef.current = true;
+                    container.scrollTop += actualScroll;
+                    y -= actualScroll;
+                    
+                    setTimeout(() => {
+                        isProgrammaticScrollRef.current = false;
+                    }, 100);
+                }
+            }
+        }
+
+        if (y + menuHeight > window.innerHeight - 10) {
+            y = y - menuHeight;
+            transformOriginY = '100%';
+        }
+        if (y < 10) {
+            y = 10;
+        }
+
+        const transformOriginX = x < bubbleRect.left ? '100%' : '0%';
+        const transformOrigin = `${transformOriginX} ${transformOriginY}`;
+
+        setContextMenu({ x, y, message: msg, transformOrigin });
     };
 
     const handleCloseContextMenu = () => setContextMenu(null);
@@ -820,20 +814,39 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
         return selectedChat.id;
     };
 
-    const handleDeleteMessage = async (msg) => {
-        const messageId = msg._id || msg.id;
+    const handleDeleteMessage = (msg) => {
         handleCloseContextMenu();
+        // Open choice modal — scope is chosen inside the modal
+        setDeleteConfirm({ message: msg });
+    };
+
+    const confirmDeleteMessage = async (scope) => {
+        if (!deleteConfirm) return;
+        const { message: msg } = deleteConfirm;
+        const messageId = msg._id || msg.id;
+        setDeleteConfirm(null);
         try {
             const conversationId = getConversationId();
-            await messagesAPI.deleteMessage(messageId, conversationId);
-            setMessages(prev => prev.map(m =>
-                (m._id === messageId || m.id === messageId)
-                    ? { ...m, type: 'deleted', content: null, deleted: true }
-                    : m
-            ));
-            if (socket) {
-                const event = selectedChat.type === 'group' ? 'group:message:deleted' : 'message:deleted';
-                socket.emit(event, { messageId, chatId: selectedChat.id });
+            await messagesAPI.deleteMessage(messageId, conversationId, scope);
+            if (scope === 'me') {
+                // Hide message only for current user locally
+                setMessages(prev => prev.map(m =>
+                    (m._id === messageId || m.id === messageId)
+                        ? { ...m, deletedFor: [...(m.deletedFor || []), currentUser.id] }
+                        : m
+                ));
+            } else {
+                // Delete for everyone — update to deleted state
+                setMessages(prev => prev.map(m =>
+                    (m._id === messageId || m.id === messageId)
+                        ? { ...m, type: 'deleted', content: null, deleted: true }
+                        : m
+                ));
+                setFileDetailMsg(prev => (prev && (prev._id === messageId || prev.id === messageId)) ? null : prev);
+                if (socket) {
+                    const event = selectedChat.type === 'group' ? 'group:message:deleted' : 'message:deleted';
+                    socket.emit(event, { messageId, chatId: selectedChat.id });
+                }
             }
         } catch (err) {
             console.error('Failed to delete message:', err);
@@ -868,13 +881,10 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
                     ? { ...m, pinned: nowPinned }
                     : m
             ));
-            if (nowPinned) {
-                setPinnedMessage({ ...msg, pinned: true });
-            } else if (pinnedMessage && (pinnedMessage._id === messageId || pinnedMessage.id === messageId)) {
-                setPinnedMessage(null);
-            }
+            fetchPinnedMessages();
             if (socket) {
-                socket.emit('message:pinned', { messageId, chatId: selectedChat.id, pinned: nowPinned });
+                const event = selectedChat.type === 'group' ? 'group:message:pinned' : 'message:pinned';
+                socket.emit(event, { messageId, chatId: selectedChat.id, pinned: nowPinned });
             }
         } catch (err) {
             console.error('Failed to pin message:', err);
@@ -885,14 +895,70 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
         handleCopyMessage(msg);
     };
 
-    useEffect(() => {
-        const pinned = messages.find(m => m.pinned);
-        setPinnedMessage(pinned || null);
-    }, [messages]);
+    const handleReactMessage = async (msg, emoji) => {
+        const messageId = msg._id || msg.id;
+        handleCloseContextMenu();
+        try {
+            const conversationId = getConversationId();
+            const res = await messagesAPI.reactToMessage(messageId, conversationId, emoji);
+            const updatedReactions = res.data.reactions;
+            setMessages(prev => prev.map(m =>
+                (m._id === messageId || m.id === messageId)
+                    ? { ...m, reactions: updatedReactions }
+                    : m
+            ));
+            if (socket) {
+                const event = selectedChat.type === 'group' ? 'group:message:reaction' : 'message:reaction';
+                socket.emit(event, { messageId, chatId: selectedChat.id, reactions: updatedReactions });
+            }
+        } catch (err) {
+            console.error('Failed to react to message:', err);
+        }
+    };
+
+    const renderMessageReactions = (msg) => {
+        if (!msg.reactions || msg.reactions.length === 0) return null;
+
+        // Group reactions by emoji
+        const grouped = msg.reactions.reduce((acc, current) => {
+            acc[current.emoji] = (acc[current.emoji] || 0) + 1;
+            return acc;
+        }, {});
+
+        const currentUserId = currentUser?.id || currentUser?._id;
+
+        return (
+            <div className="message-reactions-container">
+                {Object.entries(grouped).map(([emoji, count]) => {
+                    const userHasReacted = msg.reactions.some(
+                        r => r.emoji === emoji && (
+                            r.user === currentUserId || 
+                            r.user?._id === currentUserId || 
+                            r.user?.id === currentUserId
+                        )
+                    );
+                    return (
+                        <button
+                            key={emoji}
+                            className={`message-reaction-badge ${userHasReacted ? 'active' : ''}`}
+                            onClick={() => handleReactMessage(msg, emoji)}
+                            title={`${count} reaction(s)`}
+                        >
+                            <span className="reaction-emoji">{emoji}</span>
+                            <span className="reaction-count">{count}</span>
+                        </button>
+                    );
+                })}
+            </div>
+        );
+    };
 
     useEffect(() => {
         if (!contextMenu) return;
-        const close = () => setContextMenu(null);
+        const close = (e) => {
+            if (isProgrammaticScrollRef.current) return;
+            setContextMenu(null);
+        };
         document.addEventListener('click', close);
         document.addEventListener('scroll', close, true);
         return () => {
@@ -900,6 +966,17 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
             document.removeEventListener('scroll', close, true);
         };
     }, [contextMenu]);
+
+    useEffect(() => {
+        if (!showEmojiPicker) return;
+        const close = (e) => {
+            if (!e.target.closest('.emoji-picker-container')) {
+                setShowEmojiPicker(false);
+            }
+        };
+        document.addEventListener('click', close);
+        return () => document.removeEventListener('click', close);
+    }, [showEmojiPicker]);
 
     const getMessageStatus = (msg) => {
         if (!isOwnMessage(msg)) return null;
@@ -1132,6 +1209,7 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
                                 <span className="message-time">{formatTime(msg.timestamp || msg.createdAt)}</span>
                             </div>
                         )}
+                        {renderMessageReactions(msg)}
                     </div>
                 </div>
             </React.Fragment>
@@ -1256,7 +1334,13 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
                                 <span>— Beginning of conversation —</span>
                             </div>
                         )}
-                        {messages.map((msg, idx) => renderMessage(msg, idx))}
+                        {messages
+                            .filter(msg => {
+                                // Hide messages deleted for this user ("delete for me")
+                                const df = msg.deletedFor || [];
+                                return !df.some(id => id === currentUser.id || id?.toString?.() === currentUser.id);
+                            })
+                            .map((msg, idx) => renderMessage(msg, idx))}
                         {typing && (
                             <div className="typing-indicator">
                                 <div className="typing-dots"><span></span><span></span><span></span></div>
@@ -1295,6 +1379,42 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
                             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                         </svg>
                     </button>
+
+                    <div className="emoji-picker-container">
+                        <button type="button" className="emoji-trigger-btn" onClick={() => setShowEmojiPicker(!showEmojiPicker)} title="Add emoji">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <circle cx="12" cy="12" r="10" />
+                                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                                <line x1="9" y1="9" x2="9.01" y2="9" />
+                                <line x1="15" y1="9" x2="15.01" y2="9" />
+                            </svg>
+                        </button>
+                        {showEmojiPicker && (
+                            <div className="emoji-picker-popover">
+                                <div className="emoji-picker-grid">
+                                    {['😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', 
+                                      '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', 
+                                      '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🥸', 
+                                      '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', 
+                                      '🥺', '😢', '😭', '😤', '😠', '😡', '🤬', '🤯', '😳', '🥵', 
+                                      '🥶', '😱', '🤫', '😐', '😑', '😬', '🙄', '💀', '💩', '👍', 
+                                      '👎', '👊', '👋', '👏', '🙌', '🙏', '❤️', '🔥', '✨'].map(emoji => (
+                                        <button
+                                            key={emoji}
+                                            type="button"
+                                            className="emoji-item-btn"
+                                            onClick={() => {
+                                                setNewMessage(prev => prev + emoji);
+                                                inputRef.current?.focus();
+                                            }}
+                                        >
+                                            {emoji}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
                     <input
                         ref={inputRef}
                         type="text"
@@ -1443,23 +1563,108 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
                 </div>
             )}
 
-            {/* Pinned Message Banner */}
-            {pinnedMessage && (
-                <div className="pinned-message-banner" onClick={() => handleScrollToMessage(pinnedMessage._id || pinnedMessage.id)}>
-                    <div className="pinned-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
-                        </svg>
+            {/* Pinned Messages Banner */}
+            {pinnedMessages.length > 0 && (
+                <div className="pinned-messages-wrapper">
+                    <div className="pinned-message-banner">
+                        <div className="pinned-icon" onClick={() => handleScrollToMessage(pinnedMessages[currentPinnedIndex]._id || pinnedMessages[currentPinnedIndex].id)}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
+                            </svg>
+                        </div>
+                        <div className="pinned-content" onClick={() => handleScrollToMessage(pinnedMessages[currentPinnedIndex]._id || pinnedMessages[currentPinnedIndex].id)}>
+                            <span className="pinned-label">
+                                Pinned Message {pinnedMessages.length > 1 && `#${currentPinnedIndex + 1} of ${pinnedMessages.length}`}
+                            </span>
+                            <span className="pinned-text">
+                                {pinnedMessages[currentPinnedIndex].content || pinnedMessages[currentPinnedIndex].fileName || 'File'}
+                            </span>
+                        </div>
+                        <div className="pinned-actions">
+                            {pinnedMessages.length > 1 && (
+                                <div className="pinned-nav">
+                                    <button 
+                                        className="pinned-nav-btn" 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setCurrentPinnedIndex(prev => (prev - 1 + pinnedMessages.length) % pinnedMessages.length);
+                                        }}
+                                        title="Previous pinned message"
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                            <polyline points="15 18 9 12 15 6" />
+                                        </svg>
+                                    </button>
+                                    <button 
+                                        className="pinned-nav-btn" 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setCurrentPinnedIndex(prev => (prev + 1) % pinnedMessages.length);
+                                        }}
+                                        title="Next pinned message"
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                            <polyline points="9 18 15 12 9 6" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            )}
+                            <button 
+                                className={`pinned-list-btn ${showAllPinned ? 'active' : ''}`}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowAllPinned(!showAllPinned);
+                                }}
+                                title="Show all pinned messages"
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                                </svg>
+                            </button>
+                            <button 
+                                className="pinned-close" 
+                                onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    handlePinMessage(pinnedMessages[currentPinnedIndex]); 
+                                }}
+                                title="Unpin message"
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                            </button>
+                        </div>
                     </div>
-                    <div className="pinned-content">
-                        <span className="pinned-label">Pinned Message</span>
-                        <span className="pinned-text">{pinnedMessage.content || pinnedMessage.fileName || 'File'}</span>
-                    </div>
-                    <button className="pinned-close" onClick={(e) => { e.stopPropagation(); setPinnedMessage(null); }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                    </button>
+
+                    {showAllPinned && (
+                        <div className="pinned-all-dropdown">
+                            <div className="pinned-all-header">
+                                <span>Pinned Messages ({pinnedMessages.length})</span>
+                                <button className="pinned-all-close" onClick={() => setShowAllPinned(false)}>✕</button>
+                            </div>
+                            <div className="pinned-all-list">
+                                {pinnedMessages.map((msg, index) => (
+                                    <div 
+                                        key={msg._id || msg.id} 
+                                        className={`pinned-all-item ${index === currentPinnedIndex ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setCurrentPinnedIndex(index);
+                                            handleScrollToMessage(msg._id || msg.id);
+                                            setShowAllPinned(false);
+                                        }}
+                                    >
+                                        <div className="pinned-all-item-sender">{msg.sender?.username || 'User'}</div>
+                                        <div className="pinned-all-item-text">{msg.content || msg.fileName || 'File'}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -1467,9 +1672,26 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
             {contextMenu && (
                 <div
                     className="msg-context-menu"
-                    style={{ top: contextMenu.y, left: contextMenu.x }}
+                    style={{ 
+                        top: contextMenu.y, 
+                        left: contextMenu.x,
+                        transformOrigin: contextMenu.transformOrigin
+                    }}
                     onClick={(e) => e.stopPropagation()}
                 >
+                    {contextMenu.message.type !== 'deleted' && !contextMenu.message.deleted && (
+                        <div className="ctx-reactions-bar">
+                            {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
+                                <button
+                                    key={emoji}
+                                    className="ctx-reaction-btn"
+                                    onClick={() => handleReactMessage(contextMenu.message, emoji)}
+                                >
+                                    {emoji}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                     {contextMenu.message.type !== 'deleted' && !contextMenu.message.deleted && (
                         <button className="ctx-item" onClick={() => handleCopyMessage(contextMenu.message)}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1508,7 +1730,7 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
                             Info
                         </button>
                     )}
-                    {isOwnMessage(contextMenu.message) && contextMenu.message.type !== 'deleted' && !contextMenu.message.deleted && (
+                    {contextMenu.message.type !== 'deleted' && !contextMenu.message.deleted && (
                         <button className="ctx-item ctx-item-danger" onClick={() => handleDeleteMessage(contextMenu.message)}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" />
@@ -1516,6 +1738,42 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
                             Delete
                         </button>
                     )}
+                </div>
+            )}
+
+            {/* Delete Choice Modal */}
+            {deleteConfirm && (
+                <div className="delete-confirm-overlay" onClick={() => setDeleteConfirm(null)}>
+                    <div className="delete-confirm-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="delete-confirm-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" />
+                            </svg>
+                        </div>
+                        <h3 className="delete-confirm-title">Delete Message</h3>
+                        <p className="delete-confirm-desc">Who do you want to delete this message for?</p>
+                        <div className="delete-confirm-choices">
+                            <button className="delete-choice-btn delete-choice-me" onClick={() => confirmDeleteMessage('me')}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+                                </svg>
+                                Delete for Me
+                                <span className="delete-choice-hint">Only you won't see this</span>
+                            </button>
+                            {isOwnMessage(deleteConfirm.message) && (
+                                <button className="delete-choice-btn delete-choice-everyone" onClick={() => confirmDeleteMessage('everyone')}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                                    </svg>
+                                    Delete for Everyone
+                                    <span className="delete-choice-hint">Removed for all participants</span>
+                                </button>
+                            )}
+                            <button className="delete-choice-btn delete-choice-cancel" onClick={() => setDeleteConfirm(null)}>
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 

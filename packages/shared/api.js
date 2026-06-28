@@ -134,9 +134,12 @@ export const messagesAPI = {
     markAsRead: (messageId, conversationId) => api.patch(`/messages/${messageId}/read`, { conversationId }),
     markConversationAsRead: (userId, groupId) => api.post('/messages/mark-conversation-read', { userId, groupId }),
     getUnreadCountsByConversation: () => api.get('/messages/unread-counts-by-conversation'),
-    deleteMessage: (messageId, conversationId) => api.delete(`/messages/${messageId}`, { data: { conversationId } }),
+    deleteMessage: (messageId, conversationId, scope = 'everyone') =>
+        api.delete(`/messages/${messageId}`, { data: { conversationId, scope } }),
     getMessageInfo: (messageId, conversationId) => api.get(`/messages/${messageId}/info`, { params: { conversationId } }),
     pinMessage: (messageId, conversationId) => api.patch(`/messages/${messageId}/pin`, { conversationId }),
+    getPinnedMessages: (params) => api.get('/messages/pinned', { params }),
+    reactToMessage: (messageId, conversationId, emoji) => api.patch(`/messages/${messageId}/react`, { conversationId, emoji }),
 };
 
 // Files API (AWS S3 file sharing)

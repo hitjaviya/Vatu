@@ -72,9 +72,15 @@ const conversationBucketSchema = new mongoose.Schema({
             user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
             deliveredAt: { type: Date, default: Date.now }
         }],
-        // Soft delete
+        // Soft delete (for everyone)
         deleted: { type: Boolean, default: false },
         deletedAt: Date,
+        // Per-user local delete ("delete for me")
+        deletedFor: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+        reactions: [{
+            emoji: String,
+            user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+        }],
         // Pin support
         pinned: { type: Boolean, default: false },
         pinnedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

@@ -10,6 +10,7 @@ const config = {
         corsOrigins: [
             'http://localhost:3000',
             'http://localhost:5173',
+            'http://localhost:5174',
             process.env.CLIENT_URL_DEV
         ].filter(Boolean),
         mongodbUri: process.env.MONGODB_URI_DEV,

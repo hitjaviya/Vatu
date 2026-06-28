@@ -39,8 +39,6 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve uploaded files
-app.use('/uploads', express.static('uploads'));
 
 // Connect to MongoDB
 connectDB();
@@ -200,12 +198,57 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Handle private message deletion
+  socket.on('message:deleted', (data) => {
+    const { messageId, chatId } = data;
+    const recipientSocketId = onlineUsers.get(chatId);
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit('message:deleted', { messageId, chatId: socket.userId });
+    }
+  });
+
+  // Handle group message deletion
+  socket.on('group:message:deleted', (data) => {
+    const { messageId, chatId } = data;
+    io.emit('group:message:deleted', { messageId, groupId: chatId });
+  });
+
+  // Handle private message pin
+  socket.on('message:pinned', (data) => {
+    const { messageId, chatId, pinned } = data;
+    const recipientSocketId = onlineUsers.get(chatId);
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit('message:pinned', { messageId, chatId: socket.userId, pinned });
+    }
+  });
+
+  // Handle group message pin
+  socket.on('group:message:pinned', (data) => {
+    const { messageId, chatId, pinned } = data;
+    io.emit('group:message:pinned', { messageId, groupId: chatId, pinned });
+  });
+
+  // Handle private message reaction
+  socket.on('message:reaction', (data) => {
+    const { messageId, chatId, reactions } = data;
+    const recipientSocketId = onlineUsers.get(chatId);
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit('message:reaction', { messageId, chatId: socket.userId, reactions });
+    }
+  });
+
+  // Handle group message reaction
+  socket.on('group:message:reaction', (data) => {
+    const { messageId, chatId, reactions } = data;
+    io.emit('group:message:reaction', { messageId, groupId: chatId, reactions });
+  });
+
   // Group message
   socket.on('group:message', async (data) => {
     try {
       const { groupId, content, type, fileUrl, fileName, fileSize, replyTo, tempId, sharedFileId } = data;
 
-      ('Received group:message with replyTo:', replyTo);
+
 
       if (!socket.userId) {
         socket.emit('error', { message: 'Not authenticated' });
