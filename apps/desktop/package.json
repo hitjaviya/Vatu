@@ -53,7 +53,6 @@
         }
     },
     "dependencies": {
-        "@chat-app/ui":     "*",
         "@chat-app/shared": "*"
     },
     "devDependencies": {

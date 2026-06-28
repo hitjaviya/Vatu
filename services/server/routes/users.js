@@ -59,7 +59,8 @@ router.patch('/profile', authenticate, async (req, res) => {
 // Upload profile picture
 router.post('/avatar', authenticate, async (req, res) => {
     const { uploadAvatar } = require('../middleware/upload');
-    const config = require('../config/config');
+    const S3Service = require('../services/S3Service');
+    const path = require('path');
     
     uploadAvatar(req, res, async (err) => {
         if (err) {
@@ -71,18 +72,30 @@ router.post('/avatar', authenticate, async (req, res) => {
         }
 
         try {
-            // Delete old avatar file if it exists and is a local file
-            if (req.user.avatar && req.user.avatar.startsWith('/uploads')) {
-                const fs = require('fs');
-                const path = require('path');
-                const oldPath = path.join(__dirname, '..', req.user.avatar);
-                if (fs.existsSync(oldPath)) {
-                    fs.unlinkSync(oldPath);
+            // Delete old avatar from S3 if it exists
+            if (req.user.avatar && req.user.avatar.includes('/chat-files/')) {
+                try {
+                    const keyIndex = req.user.avatar.indexOf('chat-files/');
+                    if (keyIndex !== -1) {
+                        const oldKey = req.user.avatar.substring(keyIndex).split('?')[0];
+                        await S3Service.delete(oldKey);
+                    }
+                } catch (deleteError) {
+                    console.error('Failed to delete old avatar from S3:', deleteError);
                 }
             }
 
+            // Upload new avatar to S3
+            const { s3Key } = await S3Service.upload(
+                req.file.buffer,
+                req.file.originalname,
+                req.file.mimetype
+            );
+
+            // Generate presigned download URL
+            const avatarUrl = await S3Service.getDownloadUrl(s3Key);
+
             // Update user with new avatar URL
-            const avatarUrl = `${config.serverUrl}/uploads/avatars/${req.file.filename}`;
             req.user.avatar = avatarUrl;
             await req.user.save();
 

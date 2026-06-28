@@ -2,11 +2,11 @@ const express = require('express');
 const { authenticate } = require('../middleware/auth');
 const MessageService = require('../services/MessageService');
 const ConversationBucket = require('../models/ConversationBucket');
+const { formatMessage } = require('../utils/bucketUtils');
 const S3Service = require('../services/S3Service');
 const SharedFile = require('../models/SharedFile');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 
 const router = express.Router();
 
@@ -15,7 +15,7 @@ const memoryUpload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10485760 }, // 10MB default
     fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|gif|webp|pdf|doc|docx|txt|mp4|mp3|wav|ogg|zip|rar/;
+        const allowedTypes = /jpeg|jpg|png|gif|webp|pdf|doc|docx|txt|csv|mp4|mkv|avi|mp3|wav|ogg|aac|flac|zip|rar|7z|ppt|pptx|xls|xlsx/;
         const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
 
         if (extname) {
@@ -39,35 +39,6 @@ const handleMemoryUpload = (req, res, next) => {
     });
 };
 
-// Keep legacy disk storage for backward compatibility
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const uploadDir = 'uploads';
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-        }
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + path.extname(file.originalname));
-    }
-});
-
-const upload = multer({
-    storage,
-    limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10485760 },
-    fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|txt|mp4|mp3/;
-        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-        const mimetype = allowedTypes.test(file.mimetype);
-
-        if (extname && mimetype) {
-            return cb(null, true);
-        }
-        cb(new Error('Invalid file type'));
-    }
-});
 
 // Get conversation messages between two users (legacy offset-based)
 router.get('/conversation/:userId', authenticate, async (req, res) => {
@@ -281,14 +252,19 @@ router.post('/mark-conversation-read', authenticate, async (req, res) => {
 router.patch('/:messageId/read', authenticate, async (req, res) => {
     try {
         const { messageId } = req.params;
-        const { conversationId } = req.body;
 
-        if (!conversationId) {
-            return res.status(400).json({ error: 'Conversation ID required' });
+        // Find the bucket containing this message where the user is a participant
+        const bucket = await ConversationBucket.findOne({
+            'messages._id': messageId,
+            participants: req.user._id
+        });
+
+        if (!bucket) {
+            return res.status(404).json({ error: 'Message not found or access denied' });
         }
 
         // Use MessageService to mark message as read
-        const message = await MessageService.markAsRead(conversationId, messageId);
+        const message = await MessageService.markAsRead(bucket.conversationId, messageId);
 
         if (!message) {
             return res.status(404).json({ error: 'Message not found' });
@@ -361,37 +337,70 @@ router.get('/search/:conversationId', authenticate, async (req, res) => {
     }
 });
 
-// Soft delete a message (only sender can delete)
+// Delete a message — supports "delete for me" and "delete for everyone"
 router.delete('/:messageId', authenticate, async (req, res) => {
     try {
         const { messageId } = req.params;
-        const { conversationId } = req.body;
-
-        if (!conversationId) {
-            return res.status(400).json({ error: 'Conversation ID required' });
-        }
+        // scope: 'me' | 'everyone' (default 'everyone' for backward-compat)
+        const scope = req.body?.scope || req.query?.scope || 'everyone';
 
         const bucket = await ConversationBucket.findOne({
-            conversationId,
-            'messages._id': messageId
+            'messages._id': messageId,
+            participants: req.user._id
         });
 
-        if (!bucket) return res.status(404).json({ error: 'Message not found' });
+        if (!bucket) return res.status(404).json({ error: 'Message not found or access denied' });
 
         const message = bucket.messages.id(messageId);
         if (!message) return res.status(404).json({ error: 'Message not found' });
 
+        if (scope === 'me') {
+            // "Delete for me" — mark message hidden for this user only
+            const alreadyDeleted = message.deletedFor.some(
+                (id) => id.toString() === req.user._id.toString()
+            );
+            if (!alreadyDeleted) {
+                message.deletedFor.push(req.user._id);
+                await bucket.save();
+            }
+            return res.json({ success: true, messageId, scope: 'me' });
+        }
+
+        // "Delete for everyone" — only the sender may do this
         if (message.sender.toString() !== req.user._id.toString()) {
             return res.status(403).json({ error: 'You can only delete your own messages' });
+        }
+
+        // Cleanup S3 file if attached
+        if (message.sharedFile) {
+            try {
+                const sharedFile = await SharedFile.findById(message.sharedFile);
+                if (sharedFile) {
+                    sharedFile.shareCount -= 1;
+                    if (sharedFile.shareCount <= 0) {
+                        await S3Service.delete(sharedFile.s3Key);
+                        await SharedFile.findByIdAndDelete(sharedFile._id);
+                    } else {
+                        await sharedFile.save();
+                    }
+                }
+            } catch (err) {
+                console.error('Error cleaning up shared file on message deletion:', err);
+            }
+            message.sharedFile = null;
         }
 
         message.deleted = true;
         message.deletedAt = new Date();
         message.content = 'This message was deleted';
         message.type = 'deleted';
+        message.fileUrl = null;
+        message.fileName = null;
+        message.fileSize = null;
+
         await bucket.save();
 
-        res.json({ success: true, messageId });
+        res.json({ success: true, messageId, scope: 'everyone' });
     } catch (error) {
         console.error('Error deleting message:', error);
         res.status(500).json({ error: 'Failed to delete message' });
@@ -402,19 +411,14 @@ router.delete('/:messageId', authenticate, async (req, res) => {
 router.get('/:messageId/info', authenticate, async (req, res) => {
     try {
         const { messageId } = req.params;
-        const { conversationId } = req.query;
-
-        if (!conversationId) {
-            return res.status(400).json({ error: 'conversationId query param required' });
-        }
 
         const bucket = await ConversationBucket.findOne({
-            conversationId,
-            'messages._id': messageId
+            'messages._id': messageId,
+            participants: req.user._id
         }).populate('messages.readBy.user', 'username avatar')
           .populate('messages.deliveredTo.user', 'username avatar');
 
-        if (!bucket) return res.status(404).json({ error: 'Message not found' });
+        if (!bucket) return res.status(404).json({ error: 'Message not found or access denied' });
 
         const message = bucket.messages.id(messageId);
         if (!message) return res.status(404).json({ error: 'Message not found' });
@@ -439,18 +443,13 @@ router.get('/:messageId/info', authenticate, async (req, res) => {
 router.patch('/:messageId/pin', authenticate, async (req, res) => {
     try {
         const { messageId } = req.params;
-        const { conversationId } = req.body;
-
-        if (!conversationId) {
-            return res.status(400).json({ error: 'Conversation ID required' });
-        }
 
         const bucket = await ConversationBucket.findOne({
-            conversationId,
-            'messages._id': messageId
+            'messages._id': messageId,
+            participants: req.user._id
         });
 
-        if (!bucket) return res.status(404).json({ error: 'Message not found' });
+        if (!bucket) return res.status(404).json({ error: 'Message not found or access denied' });
 
         const message = bucket.messages.id(messageId);
         if (!message) return res.status(404).json({ error: 'Message not found' });
@@ -464,6 +463,90 @@ router.patch('/:messageId/pin', authenticate, async (req, res) => {
     } catch (error) {
         console.error('Error pinning message:', error);
         res.status(500).json({ error: 'Failed to pin message' });
+    }
+});
+
+// Get all pinned messages for a conversation
+router.get('/pinned', authenticate, async (req, res) => {
+    try {
+        const { userId, groupId } = req.query;
+        let conversationId;
+
+        if (groupId) {
+            conversationId = `group_${groupId}`;
+        } else if (userId) {
+            const ids = [req.user._id.toString(), userId.toString()].sort();
+            conversationId = `dm_${ids[0]}_${ids[1]}`;
+        } else {
+            return res.status(400).json({ error: 'Missing userId or groupId' });
+        }
+
+        const buckets = await ConversationBucket.find({
+            conversationId,
+            participants: req.user._id
+        }).populate('messages.sender', 'username avatar');
+
+        if (!buckets || buckets.length === 0) {
+            return res.json({ pinnedMessages: [] });
+        }
+
+        const pinnedMessages = [];
+        for (const bucket of buckets) {
+            const pinned = bucket.messages.filter(msg => msg.pinned && !msg.deleted);
+            pinnedMessages.push(...pinned.map(msg => formatMessage(msg)));
+        }
+
+        // Sort by creation/pin time: oldest pinned first
+        pinnedMessages.sort((a, b) => new Date(a.pinnedAt || a.createdAt) - new Date(b.pinnedAt || b.createdAt));
+
+        res.json({ pinnedMessages });
+    } catch (error) {
+        console.error('Error fetching pinned messages:', error);
+        res.status(500).json({ error: 'Failed to fetch pinned messages' });
+    }
+});
+
+// Add/remove emoji reaction on a message
+router.patch('/:messageId/react', authenticate, async (req, res) => {
+    try {
+        const { messageId } = req.params;
+        const { emoji } = req.body;
+
+        if (!emoji) {
+            return res.status(400).json({ error: 'Emoji is required' });
+        }
+
+        const bucket = await ConversationBucket.findOne({
+            'messages._id': messageId,
+            participants: req.user._id
+        });
+
+        if (!bucket) return res.status(404).json({ error: 'Message not found or access denied' });
+
+        const message = bucket.messages.id(messageId);
+        if (!message) return res.status(404).json({ error: 'Message not found' });
+
+        if (!message.reactions) message.reactions = [];
+
+        // Check if user already reacted with this exact emoji
+        const existingReactionIndex = message.reactions.findIndex(
+            r => r.emoji === emoji && r.user.toString() === req.user._id.toString()
+        );
+
+        if (existingReactionIndex > -1) {
+            // Remove the reaction (toggle off)
+            message.reactions.splice(existingReactionIndex, 1);
+        } else {
+            // Add the reaction
+            message.reactions.push({ emoji, user: req.user._id });
+        }
+
+        await bucket.save();
+
+        res.json({ success: true, messageId, reactions: message.reactions });
+    } catch (error) {
+        console.error('Error toggling reaction:', error);
+        res.status(500).json({ error: 'Failed to toggle reaction' });
     }
 });
 

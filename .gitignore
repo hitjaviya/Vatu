@@ -11,6 +11,7 @@ pnpm-lock.yaml
 # ================================
 .env
 .env.*
+.env.production
 !.env.example
 !.env.template
 

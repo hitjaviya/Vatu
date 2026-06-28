@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@chat-app/shared/hooks/useAuth';
 import { useSocket } from '@chat-app/shared/hooks/useSocket';
-import { AuthScreen, ChatLayout } from '@chat-app/ui';
+import AuthScreen from './components/AuthScreen';
+import ChatLayout from './components/ChatLayout';
 import './App.css';
 
 function App() {

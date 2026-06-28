@@ -103,7 +103,8 @@ const formatMessage = (message, options = {}) => {
         pinnedBy: message.pinnedBy || null,
         pinnedAt: message.pinnedAt || null,
         replyTo: message.replyTo || null,
-        sharedFile: message.sharedFile || null
+        sharedFile: message.sharedFile || null,
+        reactions: message.reactions || []
     };
 
     // Add file-related fields if present and not deleted
