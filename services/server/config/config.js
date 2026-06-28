@@ -35,11 +35,11 @@ const config = {
         }
     },
     production: {
-        serverUrl: process.env.SERVER_URL_PROD || 'http://13.60.25.139',
-        clientUrl: process.env.CLIENT_URL_PROD || 'http://13.60.25.139',
+        serverUrl: process.env.SERVER_URL_PROD || 'http://13.60.38.177',
+        clientUrl: process.env.CLIENT_URL_PROD || 'http://13.60.38.177',
         corsOrigins: process.env.CORS_ORIGIN 
             ? process.env.CORS_ORIGIN.split(',')
-            : ['http://13.60.25.139'],
+            : ['http://13.60.38.177'],
         mongodbUri: process.env.MONGODB_URI_PROD ,
         jwtSecret: process.env.JWT_SECRET_PROD ,
         jwtExpire: process.env.JWT_EXPIRE || '7d',
