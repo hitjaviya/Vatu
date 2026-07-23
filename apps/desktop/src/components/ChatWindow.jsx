@@ -7,6 +7,8 @@ import PinnedMessagesBar from './chat/PinnedMessagesBar';
 import MessageContextMenu from './chat/MessageContextMenu';
 import DeleteConfirmModal from './chat/modals/DeleteConfirmModal';
 import MessageInfoModal from './chat/modals/MessageInfoModal';
+import UserInfoModal from './chat/modals/UserInfoModal';
+import ConversationThemePicker, { THEMES, applyConversationTheme } from './chat/ConversationThemePicker';
 import { useSocketEvents } from './chat/hooks/useSocketEvents';
 import {
     normalizeMessage as _normalizeMessage,
@@ -35,12 +37,15 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
     const [fileDetailMsg, setFileDetailMsg] = useState(null);
     const [fileDetailMeta, setFileDetailMeta] = useState(null);
     const [fileDetailLoading, setFileDetailLoading] = useState(false);
+    const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
     // Context menu state
     const [contextMenu, setContextMenu] = useState(null); // { x, y, message }
     // Message info modal state
     const [msgInfoModal, setMsgInfoModal] = useState(null); // { message, info }
     const [msgInfoLoading, setMsgInfoLoading] = useState(false);
+    // User info modal
+    const [userInfoTarget, setUserInfoTarget] = useState(null);
     // Pinned messages list
     const [pinnedMessages, setPinnedMessages] = useState([]);
     const [currentPinnedIndex, setCurrentPinnedIndex] = useState(0);
@@ -361,6 +366,9 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
             if (container.scrollTop < 80 && !loadingOlder && hasMoreMessages) {
                 loadOlderMessages();
             }
+            // Show scroll-to-bottom button when user is more than 200px away from bottom
+            const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+            setShowScrollToBottom(distanceFromBottom > 200);
         };
 
         container.addEventListener('scroll', handleScroll, { passive: true });
@@ -1237,7 +1245,12 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
             {/* Header */}
             <div className="chat-header">
                 <div className="chat-header-info">
-                    <div className="chat-header-avatar">
+                    <div
+                        className="chat-header-avatar"
+                        onClick={() => selectedChat.type === 'user' && setUserInfoTarget(selectedChat.data)}
+                        style={selectedChat.type === 'user' ? { cursor: 'pointer' } : {}}
+                        title={selectedChat.type === 'user' ? `View profile` : undefined}
+                    >
                         {selectedChat.data.avatar ? (
                             <img src={selectedChat.data.avatar} alt={selectedChat.data.username || selectedChat.data.name} />
                         ) : (
@@ -1245,13 +1258,23 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
                         )}
                     </div>
                     <div>
-                        <h2>{selectedChat.data.username || selectedChat.data.name}</h2>
+                        <h2
+                            className={selectedChat.type === 'user' ? 'chat-header-name-clickable' : ''}
+                            onClick={() => selectedChat.type === 'user' && setUserInfoTarget(selectedChat.data)}
+                        >
+                            {selectedChat.data.username || selectedChat.data.name}
+                        </h2>
                         {selectedChat.type === 'group' && (
                             <p>{selectedChat.data.members?.length || 0} members</p>
                         )}
                     </div>
                 </div>
                 <div className="chat-header-actions">
+                    <ConversationThemePicker
+                        selectedChat={selectedChat}
+                        currentUser={currentUser}
+                        socket={socket}
+                    />
                     <button
                         className="header-action-btn"
                         onClick={() => setShowSearch(!showSearch)}
@@ -1350,6 +1373,21 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
                     </div>
                 )}
             </div>
+
+            {/* Scroll to Bottom Button */}
+            {showScrollToBottom && (
+                <button
+                    className="scroll-to-bottom-btn"
+                    onClick={scrollToBottom}
+                    title="Go to latest messages"
+                    aria-label="Scroll to bottom"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                    <span>Latest</span>
+                </button>
+            )}
 
             {/* Input */}
             <div className="message-input-container">
@@ -1730,6 +1768,14 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
                             Info
                         </button>
                     )}
+                    {!isOwnMessage(contextMenu.message) && selectedChat?.type === 'user' && (
+                        <button className="ctx-item ctx-item-info" onClick={() => { setUserInfoTarget(selectedChat.data); handleCloseContextMenu(); }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                            </svg>
+                            User Info
+                        </button>
+                    )}
                     {contextMenu.message.type !== 'deleted' && !contextMenu.message.deleted && (
                         <button className="ctx-item ctx-item-danger" onClick={() => handleDeleteMessage(contextMenu.message)}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1739,6 +1785,17 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
                         </button>
                     )}
                 </div>
+            )}
+
+            {/* User Info Modal */}
+            {userInfoTarget && (
+                <UserInfoModal
+                    user={userInfoTarget}
+                    currentUser={currentUser}
+                    socket={socket}
+                    onClose={() => setUserInfoTarget(null)}
+                    onStartChat={(u) => setUserInfoTarget(null)}
+                />
             )}
 
             {/* Delete Choice Modal */}

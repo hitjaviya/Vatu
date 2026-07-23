@@ -13,9 +13,12 @@ const userRoutes = require('./routes/users');
 const messageRoutes = require('./routes/messages');
 const groupRoutes = require('./routes/groups');
 const fileRoutes = require('./routes/files');
+const friendRoutes = require('./routes/friends');
+const themeRoutes = require('./routes/themes');
 const { authenticateSocket } = require('./middleware/auth');
 const MessageService = require('./services/MessageService');
 const S3Service = require('./services/S3Service');
+const aiRoutes = require('./routes/ai');
 const SharedFile = require('./models/SharedFile');
 
 // Initialize Express app
@@ -49,6 +52,9 @@ app.use('/api/users', userRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/files', fileRoutes);
+app.use('/api/friends', friendRoutes);
+app.use('/api/themes', themeRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -56,7 +62,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Socket.io connection handling
-const onlineUsers = new Map(); // userId -> socketId
+const onlineUsers = new Map(); // userId -> Set of socketIds
 
 io.on('connection', (socket) => {
 
@@ -66,7 +72,10 @@ io.on('connection', (socket) => {
       const user = await authenticateSocket(token);
       if (user) {
         socket.userId = user._id.toString();
-        onlineUsers.set(socket.userId, socket.id);
+        if (!onlineUsers.has(socket.userId)) {
+          onlineUsers.set(socket.userId, new Set());
+        }
+        onlineUsers.get(socket.userId).add(socket.id);
 
         // Broadcast user online status
         io.emit('user:online', { userId: socket.userId });
@@ -130,35 +139,38 @@ io.on('connection', (socket) => {
         sharedFile: resolvedSharedFileId
       });
 
-
-      const recipientSocketId = onlineUsers.get(recipientId);
+      const recipientSockets = onlineUsers.get(recipientId);
+      const isRecipientOnline = recipientSockets && recipientSockets.size > 0;
 
       const messageData = {
         ...savedMessage,
         senderId: socket.userId,
         recipientId,
         timestamp: savedMessage.createdAt,
-        delivered: true, // Mark as delivered if recipient is online
-        deliveredAt: new Date(),
+        delivered: isRecipientOnline, // Mark as delivered if recipient is online
+        deliveredAt: isRecipientOnline ? new Date() : null,
         ...(tempId && { tempId }) // Pass tempId back for optimistic update replacement
       };
 
-      // Send to recipient if online
-      if (recipientSocketId) {
-        io.to(recipientSocketId).emit('message:receive', messageData);
+      // Send to recipient's sockets if online
+      if (isRecipientOnline) {
+        recipientSockets.forEach(sid => {
+          io.to(sid).emit('message:receive', messageData);
+        });
         // Emit delivery confirmation back to sender
         socket.emit('message:delivered', {
           messageId: savedMessage._id || savedMessage.id,
           deliveredAt: messageData.deliveredAt
         });
-      } else {
-        // If recipient is offline, send without delivered status
-        socket.emit('message:sent', { ...messageData, delivered: false, deliveredAt: null });
-        return;
       }
 
-      // Confirm to sender with saved message data
-      socket.emit('message:sent', messageData);
+      // Sync/Confirm to sender's other sockets (e.g. mobile app when sent from desktop)
+      const senderSockets = onlineUsers.get(socket.userId);
+      if (senderSockets) {
+        senderSockets.forEach(sid => {
+          io.to(sid).emit('message:sent', messageData);
+        });
+      }
     } catch (error) {
       console.error('Error sending message:', error);
       socket.emit('error', { message: 'Failed to send message' });
@@ -168,32 +180,34 @@ io.on('connection', (socket) => {
   // Typing indicator
   socket.on('typing:start', (data) => {
     const { recipientId } = data;
-    const recipientSocketId = onlineUsers.get(recipientId);
-
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit('typing:start', { userId: socket.userId });
+    const recipientSockets = onlineUsers.get(recipientId);
+    if (recipientSockets) {
+      recipientSockets.forEach(sid => {
+        io.to(sid).emit('typing:start', { userId: socket.userId });
+      });
     }
   });
 
   socket.on('typing:stop', (data) => {
     const { recipientId } = data;
-    const recipientSocketId = onlineUsers.get(recipientId);
-
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit('typing:stop', { userId: socket.userId });
+    const recipientSockets = onlineUsers.get(recipientId);
+    if (recipientSockets) {
+      recipientSockets.forEach(sid => {
+        io.to(sid).emit('typing:stop', { userId: socket.userId });
+      });
     }
   });
 
   // Handle message read receipt
   socket.on('message:read', (data) => {
     const { messageId, senderId } = data;
-    const senderSocketId = onlineUsers.get(senderId);
-
-    if (senderSocketId) {
-      // Notify sender that their message was read
-      io.to(senderSocketId).emit('message:read', {
-        messageId,
-        readAt: new Date()
+    const senderSockets = onlineUsers.get(senderId);
+    if (senderSockets) {
+      senderSockets.forEach(sid => {
+        io.to(sid).emit('message:read', {
+          messageId,
+          readAt: new Date()
+        });
       });
     }
   });
@@ -201,9 +215,20 @@ io.on('connection', (socket) => {
   // Handle private message deletion
   socket.on('message:deleted', (data) => {
     const { messageId, chatId } = data;
-    const recipientSocketId = onlineUsers.get(chatId);
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit('message:deleted', { messageId, chatId: socket.userId });
+    const recipientSockets = onlineUsers.get(chatId);
+    if (recipientSockets) {
+      recipientSockets.forEach(sid => {
+        io.to(sid).emit('message:deleted', { messageId, chatId: socket.userId });
+      });
+    }
+    // Sync deletion status back to sender's other devices
+    const senderSockets = onlineUsers.get(socket.userId);
+    if (senderSockets) {
+      senderSockets.forEach(sid => {
+        if (sid !== socket.id) {
+          io.to(sid).emit('message:deleted', { messageId, chatId });
+        }
+      });
     }
   });
 
@@ -216,9 +241,20 @@ io.on('connection', (socket) => {
   // Handle private message pin
   socket.on('message:pinned', (data) => {
     const { messageId, chatId, pinned } = data;
-    const recipientSocketId = onlineUsers.get(chatId);
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit('message:pinned', { messageId, chatId: socket.userId, pinned });
+    const recipientSockets = onlineUsers.get(chatId);
+    if (recipientSockets) {
+      recipientSockets.forEach(sid => {
+        io.to(sid).emit('message:pinned', { messageId, chatId: socket.userId, pinned });
+      });
+    }
+    // Sync pinned status to sender's other devices
+    const senderSockets = onlineUsers.get(socket.userId);
+    if (senderSockets) {
+      senderSockets.forEach(sid => {
+        if (sid !== socket.id) {
+          io.to(sid).emit('message:pinned', { messageId, chatId, pinned });
+        }
+      });
     }
   });
 
@@ -231,9 +267,20 @@ io.on('connection', (socket) => {
   // Handle private message reaction
   socket.on('message:reaction', (data) => {
     const { messageId, chatId, reactions } = data;
-    const recipientSocketId = onlineUsers.get(chatId);
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit('message:reaction', { messageId, chatId: socket.userId, reactions });
+    const recipientSockets = onlineUsers.get(chatId);
+    if (recipientSockets) {
+      recipientSockets.forEach(sid => {
+        io.to(sid).emit('message:reaction', { messageId, chatId: socket.userId, reactions });
+      });
+    }
+    // Sync reaction status to sender's other devices
+    const senderSockets = onlineUsers.get(socket.userId);
+    if (senderSockets) {
+      senderSockets.forEach(sid => {
+        if (sid !== socket.id) {
+          io.to(sid).emit('message:reaction', { messageId, chatId, reactions });
+        }
+      });
     }
   });
 
@@ -308,11 +355,149 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ---- FRIEND REQUEST NOTIFICATIONS ----
+  // Notify recipient when a friend request is sent
+  socket.on('friend:request:send', (data) => {
+    const { recipientId, request } = data;
+    const recipientSockets = onlineUsers.get(recipientId);
+    if (recipientSockets) {
+      recipientSockets.forEach(sid => {
+        io.to(sid).emit('friend:request:received', { request });
+      });
+    }
+  });
+
+  // Notify sender when their request is accepted
+  socket.on('friend:request:accepted', (data) => {
+    const { senderId, newFriend } = data;
+    const senderSockets = onlineUsers.get(senderId);
+    if (senderSockets) {
+      senderSockets.forEach(sid => {
+        io.to(sid).emit('friend:request:was_accepted', { newFriend });
+      });
+    }
+  });
+
+  // ---- GROUP INVITE NOTIFICATIONS ----
+  // Notify recipient when they are invited to a group
+  socket.on('group:invite:send', (data) => {
+    const { recipientId, invite } = data;
+    const recipientSockets = onlineUsers.get(recipientId);
+    if (recipientSockets) {
+      recipientSockets.forEach(sid => {
+        io.to(sid).emit('group:invite:received', { invite });
+      });
+    }
+  });
+
+  // Notify group members when someone accepts a group invite
+  socket.on('group:invite:accepted', (data) => {
+    const { memberIds, newMember, groupId } = data;
+    memberIds.forEach(memberId => {
+      const memberSockets = onlineUsers.get(memberId);
+      if (memberSockets) {
+        memberSockets.forEach(sid => {
+          io.to(sid).emit('group:member:joined', { newMember, groupId });
+        });
+      }
+    });
+  });
+
+  // ---- CONVERSATION THEME CHANGES ----
+  // Broadcast to the other user in a private chat
+  socket.on('conversation:theme:changed', (data) => {
+    const { recipientId, theme, conversationKey, changedByName } = data;
+    console.log('Server received conversation:theme:changed:', { recipientId, theme, conversationKey, changedByName });
+    const recipientSockets = onlineUsers.get(recipientId);
+    if (recipientSockets) {
+      recipientSockets.forEach(sid => {
+        io.to(sid).emit('conversation:theme:changed', {
+          theme,
+          conversationKey,
+          changedByName
+        });
+      });
+      console.log('Broadcasted conversation theme change to recipient');
+    }
+    // Sync theme change to sender's other devices
+    const senderSockets = onlineUsers.get(socket.userId);
+    if (senderSockets) {
+      senderSockets.forEach(sid => {
+        if (sid !== socket.id) {
+          io.to(sid).emit('conversation:theme:changed', {
+            theme,
+            conversationKey,
+            changedByName
+          });
+        }
+      });
+    }
+  });
+
+  // Broadcast theme change to all group members
+  socket.on('group:theme:changed', (data) => {
+    const { memberIds, theme, groupId, changedByName } = data;
+    console.log('Server received group:theme:changed:', { memberIds, theme, groupId, changedByName });
+    memberIds.forEach(memberId => {
+      const memberSockets = onlineUsers.get(memberId);
+      if (memberSockets) {
+        memberSockets.forEach(sid => {
+          if (sid === socket.id) return; // skip sender
+          io.to(sid).emit('conversation:theme:changed', {
+            theme,
+            conversationKey: `conv-theme:group:${groupId}`,
+            changedByName
+          });
+        });
+      }
+    });
+  });
+
+  // ---- TASK PERMISSION EVENTS (DM only) ----
+  // User A requests permission from User B to extract AI tasks
+  socket.on('task:permission:request', ({ recipientId, conversationId }) => {
+    const recipientSockets = onlineUsers.get(recipientId);
+    if (recipientSockets) {
+      recipientSockets.forEach(sid => {
+        io.to(sid).emit('task:permission:request', {
+          fromUserId: socket.userId,
+          conversationId
+        });
+      });
+    }
+  });
+
+  // User B grants permission → notify User A
+  socket.on('task:permission:granted', ({ recipientId, conversationId }) => {
+    const recipientSockets = onlineUsers.get(recipientId);
+    if (recipientSockets) {
+      recipientSockets.forEach(sid => {
+        io.to(sid).emit('task:permission:granted', { conversationId });
+      });
+    }
+  });
+
+  // User B denies permission → notify User A
+  socket.on('task:permission:denied', ({ recipientId, conversationId }) => {
+    const recipientSockets = onlineUsers.get(recipientId);
+    if (recipientSockets) {
+      recipientSockets.forEach(sid => {
+        io.to(sid).emit('task:permission:denied', { conversationId });
+      });
+    }
+  });
+
   // Disconnect
   socket.on('disconnect', () => {
     if (socket.userId) {
-      onlineUsers.delete(socket.userId);
-      io.emit('user:offline', { userId: socket.userId });
+      const userSockets = onlineUsers.get(socket.userId);
+      if (userSockets) {
+        userSockets.delete(socket.id);
+        if (userSockets.size === 0) {
+          onlineUsers.delete(socket.userId);
+          io.emit('user:offline', { userId: socket.userId });
+        }
+      }
     }
   });
 });

@@ -1,11 +1,12 @@
 const express = require('express');
 const { authenticate } = require('../middleware/auth');
 const Group = require('../models/Group');
+const GroupInvite = require('../models/GroupInvite');
 const MessageService = require('../services/MessageService');
 
 const router = express.Router();
 
-// Create a new group
+// Create a new group — creator joins immediately, others get invites
 router.post('/', authenticate, async (req, res) => {
     try {
         const { name, description, memberIds = [] } = req.body;
@@ -14,6 +15,7 @@ router.post('/', authenticate, async (req, res) => {
             return res.status(400).json({ error: 'Group name is required' });
         }
 
+        // Creator is the only real member at creation time
         const group = new Group({
             name,
             description,
@@ -22,15 +24,24 @@ router.post('/', authenticate, async (req, res) => {
                 {
                     user: req.user._id,
                     role: 'admin'
-                },
-                ...memberIds.map(userId => ({
-                    user: userId,
-                    role: 'member'
-                }))
+                }
             ]
         });
 
         await group.save();
+
+        // Send invites to each selected user instead of adding directly
+        if (memberIds.length > 0) {
+            const invites = memberIds.map(userId => ({
+                group: group._id,
+                invitedBy: req.user._id,
+                recipient: userId,
+                status: 'pending'
+            }));
+
+            await GroupInvite.insertMany(invites, { ordered: false }).catch(() => {});
+        }
+
         await group.populate('members.user', 'username avatar');
         await group.populate('creator', 'username avatar');
 
@@ -55,6 +66,86 @@ router.get('/', authenticate, async (req, res) => {
     } catch (error) {
         console.error('Error fetching groups:', error);
         res.status(500).json({ error: 'Failed to fetch groups' });
+    }
+});
+
+// Get pending group invites for current user
+router.get('/invites', authenticate, async (req, res) => {
+    try {
+        const invites = await GroupInvite.find({
+            recipient: req.user._id,
+            status: 'pending'
+        })
+            .populate('group', 'name avatar description')
+            .populate('invitedBy', 'username avatar');
+
+        res.json({ invites });
+    } catch (error) {
+        console.error('Error fetching group invites:', error);
+        res.status(500).json({ error: 'Failed to fetch group invites' });
+    }
+});
+
+// Accept a group invite
+router.patch('/invites/:inviteId/accept', authenticate, async (req, res) => {
+    try {
+        const invite = await GroupInvite.findById(req.params.inviteId)
+            .populate('group')
+            .populate('invitedBy', 'username avatar');
+
+        if (!invite) return res.status(404).json({ error: 'Invite not found' });
+
+        if (invite.recipient.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ error: 'Not authorized' });
+        }
+
+        if (invite.status !== 'pending') {
+            return res.status(400).json({ error: 'Invite already responded to' });
+        }
+
+        invite.status = 'accepted';
+        await invite.save();
+
+        // Add user as member of the group
+        const group = await Group.findById(invite.group._id);
+        if (group) {
+            const alreadyMember = group.members.some(
+                m => m.user.toString() === req.user._id.toString()
+            );
+            if (!alreadyMember) {
+                group.members.push({ user: req.user._id, role: 'member' });
+                await group.save();
+            }
+        }
+
+        await group.populate('members.user', 'username avatar');
+        await group.populate('creator', 'username avatar');
+
+        res.json({ group, message: 'Joined group successfully' });
+    } catch (error) {
+        console.error('Error accepting group invite:', error);
+        res.status(500).json({ error: 'Failed to accept invite' });
+    }
+});
+
+// Decline a group invite
+router.patch('/invites/:inviteId/decline', authenticate, async (req, res) => {
+    try {
+        const invite = await GroupInvite.findById(req.params.inviteId);
+
+        if (!invite) return res.status(404).json({ error: 'Invite not found' });
+
+        if (invite.recipient.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ error: 'Not authorized' });
+        }
+
+        invite.status = 'declined';
+        await invite.save();
+
+        res.json({ message: 'Invite declined' });
+    } catch (error) {
+        console.error('Error declining group invite:', error);
+        res.status(500).json({ error: 'Failed to decline invite' });
     }
 });
 
@@ -145,7 +236,7 @@ router.get('/:groupId/bucket/:bucketNumber', authenticate, async (req, res) => {
     }
 });
 
-// Add member to group
+// Add member to group (sends an invite now instead of direct add)
 router.post('/:groupId/members', authenticate, async (req, res) => {
     try {
         const { groupId } = req.params;
@@ -174,15 +265,24 @@ router.post('/:groupId/members', authenticate, async (req, res) => {
             return res.status(400).json({ error: 'User is already a member' });
         }
 
-        group.members.push({
-            user: userId,
-            role: 'member'
+        // Check if invite already exists
+        const existingInvite = await GroupInvite.findOne({
+            group: groupId,
+            recipient: userId,
+            status: 'pending'
         });
 
-        await group.save();
-        await group.populate('members.user', 'username avatar');
+        if (existingInvite) {
+            return res.status(400).json({ error: 'Invite already sent to this user' });
+        }
 
-        res.json({ group });
+        await GroupInvite.create({
+            group: groupId,
+            invitedBy: req.user._id,
+            recipient: userId
+        });
+
+        res.json({ message: 'Group invite sent' });
     } catch (error) {
         console.error('Error adding member:', error);
         res.status(500).json({ error: 'Failed to add member' });

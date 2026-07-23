@@ -63,6 +63,7 @@ export const useAuth = () => {
         console.log("LOCAL STORAGE DATA (updateUser) : ", localStorage);
         localStorage.setItem('user', JSON.stringify(userData));
         setUser(userData);
+        window.dispatchEvent(new Event('authChange'));
     };
 
     return {

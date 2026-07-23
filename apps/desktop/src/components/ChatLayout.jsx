@@ -1,20 +1,34 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@chat-app/shared/hooks/useAuth';
-import { usersAPI, groupsAPI, messagesAPI } from '@chat-app/shared/api';
+import { usersAPI, groupsAPI, messagesAPI, friendsAPI } from '@chat-app/shared/api';
 import Sidebar from './Sidebar';
+import AppSidebar from './AppSidebar';
 import ChatWindow from './ChatWindow';
+import TasksPanel from './TasksPanel';
 import Settings from './Settings';
+import FriendRequestsPanel from './FriendRequestsPanel';
+import GroupInviteModal from './chat/modals/GroupInviteModal';
+import UserInfoModal from './chat/modals/UserInfoModal';
 import './ChatLayout.css';
 
 function ChatLayout({ socket, connected }) {
     const { user, logout } = useAuth();
-    const [users, setUsers] = useState([]);
+    const [friends, setFriends] = useState([]);
     const [groups, setGroups] = useState([]);
     const [selectedChat, setSelectedChat] = useState(null);
     const [onlineUsers, setOnlineUsers] = useState(new Set());
     const [unreadCounts, setUnreadCounts] = useState({});
     const [showSettings, setShowSettings] = useState(false);
+    const [showMyProfile, setShowMyProfile] = useState(false);
+    const [showTasksPanel, setShowTasksPanel] = useState(false);
     const [isWindowFocused, setIsWindowFocused] = useState(true);
+
+    // Friend requests panel
+    const [showFriendRequests, setShowFriendRequests] = useState(false);
+    const [friendRequestCount, setFriendRequestCount] = useState(0);
+
+    // Group invite queue (FIFO — show one at a time)
+    const [pendingGroupInvites, setPendingGroupInvites] = useState([]);
 
     // Refs to avoid stale closures in socket handlers
     const selectedChatRef = useRef(null);
@@ -24,11 +38,13 @@ function ChatLayout({ socket, connected }) {
     useEffect(() => { selectedChatRef.current = selectedChat; }, [selectedChat]);
     useEffect(() => { isWindowFocusedRef.current = isWindowFocused; }, [isWindowFocused]);
 
-    // Fetch users and groups
+    // Fetch friends and groups
     useEffect(() => {
-        fetchUsers();
+        fetchFriends();
         fetchGroups();
         fetchUnreadCounts();
+        fetchFriendRequestCount();
+        fetchPendingGroupInvites();
     }, []);
 
     // Track window focus state
@@ -45,8 +61,6 @@ function ChatLayout({ socket, connected }) {
 
         const handleBlur = () => {
             if (blurTimeout) clearTimeout(blurTimeout);
-            
-            // Wait 1 minute (60,000ms) before transitioning to away/unfocused state
             blurTimeout = setTimeout(() => {
                 setIsWindowFocused(false);
             }, 60000);
@@ -62,7 +76,7 @@ function ChatLayout({ socket, connected }) {
         };
     }, []);
 
-    // Socket event listeners — use refs to avoid stale closures
+    // Socket event listeners
     useEffect(() => {
         if (!socket) return;
 
@@ -82,11 +96,10 @@ function ChatLayout({ socket, connected }) {
             });
         });
 
-        // Listen for new messages — read refs, NOT stale closure state
+        // Listen for new messages
         socket.on('message:receive', (message) => {
             const currentChat = selectedChatRef.current;
             const focused = isWindowFocusedRef.current;
-            // Only increment unread if the chat is NOT currently open and focused
             const isActiveChat = focused && currentChat && currentChat.type === 'user' && currentChat.id === message.senderId;
             if (!isActiveChat) {
                 setUnreadCounts(prev => ({
@@ -99,7 +112,6 @@ function ChatLayout({ socket, connected }) {
         socket.on('group:message:receive', (message) => {
             const currentChat = selectedChatRef.current;
             const focused = isWindowFocusedRef.current;
-            // Only increment unread if the group is NOT currently open and focused
             const isActiveChat = focused && currentChat && currentChat.type === 'group' && currentChat.id === message.groupId;
             if (!isActiveChat) {
                 setUnreadCounts(prev => ({
@@ -109,21 +121,47 @@ function ChatLayout({ socket, connected }) {
             }
         });
 
+        // Real-time friend request notification
+        socket.on('friend:request:received', () => {
+            setFriendRequestCount(prev => prev + 1);
+        });
+
+        // Refresh friends list when our sent request gets accepted
+        socket.on('friend:request:was_accepted', () => {
+            fetchFriends();
+        });
+
+        // Real-time group invite
+        socket.on('group:invite:received', ({ invite }) => {
+            if (invite) {
+                setPendingGroupInvites(prev => [...prev, invite]);
+            }
+        });
+
+        // When someone accepts our invite — refresh groups
+        socket.on('group:member:joined', () => {
+            fetchGroups();
+        });
+
         return () => {
             socket.off('users:online:list');
             socket.off('user:online');
             socket.off('user:offline');
             socket.off('message:receive');
             socket.off('group:message:receive');
+            socket.off('friend:request:received');
+            socket.off('friend:request:was_accepted');
+            socket.off('group:invite:received');
+            socket.off('group:member:joined');
         };
-    }, [socket]); // only depends on socket — refs handle the rest!
+    }, [socket]);
 
-    const fetchUsers = async () => {
+    const fetchFriends = async () => {
         try {
-            const response = await usersAPI.getAll();
-            setUsers(response.data.users);
+            const res = await friendsAPI.getAll();
+            setFriends(res.data.friends || []);
         } catch (error) {
-            console.error('Error fetching users:', error);
+            console.error('Error fetching friends:', error);
         }
     };
 
@@ -142,6 +180,24 @@ function ChatLayout({ socket, connected }) {
             setUnreadCounts(response.data.unreadCounts || {});
         } catch (error) {
             console.error('Error fetching unread counts:', error);
+        }
+    };
+
+    const fetchFriendRequestCount = async () => {
+        try {
+            const res = await friendsAPI.getRequests();
+            setFriendRequestCount((res.data.requests || []).length);
+        } catch {
+            setFriendRequestCount(0);
+        }
+    };
+
+    const fetchPendingGroupInvites = async () => {
+        try {
+            const res = await groupsAPI.getInvites();
+            setPendingGroupInvites(res.data.invites || []);
+        } catch {
+            // ignore
         }
     };
 
@@ -164,20 +220,41 @@ function ChatLayout({ socket, connected }) {
         logout();
     };
 
+    // When user accepts a group invite — refresh group list, dismiss modal
+    const handleGroupInviteAccept = (newGroup) => {
+        setPendingGroupInvites(prev => prev.slice(1));
+        fetchGroups();
+    };
+
+    const handleGroupInviteDecline = () => {
+        setPendingGroupInvites(prev => prev.slice(1));
+    };
+
     return (
         <div className="chat-layout">
+            <AppSidebar
+                currentUser={user}
+                connected={connected}
+                friendRequestCount={friendRequestCount}
+                activePanel={showTasksPanel ? 'tasks' : null}
+                onOpenSettings={() => setShowSettings(true)}
+                onOpenFriendRequests={() => setShowFriendRequests(true)}
+                onOpenTasks={() => setShowTasksPanel(prev => !prev)}
+                onAvatarClick={() => setShowMyProfile(true)}
+                onLogout={handleLogout}
+            />
             <Sidebar
                 currentUser={user}
-                users={users}
+                friends={friends}
                 groups={groups}
                 selectedChat={selectedChat}
                 onSelectChat={handleSelectChat}
-                onLogout={handleLogout}
                 onlineUsers={onlineUsers}
                 connected={connected}
                 unreadCounts={unreadCounts}
                 onRefreshGroups={fetchGroups}
-                onOpenSettings={() => setShowSettings(true)}
+                onRefreshFriends={fetchFriends}
+                socket={socket}
             />
 
             <ChatWindow
@@ -189,21 +266,63 @@ function ChatLayout({ socket, connected }) {
                 onUnreadMessageRead={(chatId) => {
                     setUnreadCounts(prev => {
                         if (prev[chatId] && prev[chatId] > 0) {
-                            return {
-                                ...prev,
-                                [chatId]: prev[chatId] - 1
-                            };
+                            return { ...prev, [chatId]: prev[chatId] - 1 };
                         }
                         return prev;
                     });
                 }}
             />
 
-            <Settings 
-                isOpen={showSettings} 
+            {showTasksPanel && (
+                <TasksPanel
+                    currentUser={user}
+                    selectedChat={selectedChat}
+                    socket={socket}
+                    onClose={() => setShowTasksPanel(false)}
+                />
+            )}
+
+            <Settings
+                isOpen={showSettings}
                 onClose={() => setShowSettings(false)}
                 currentUser={user}
             />
+
+            {/* Friend Requests Panel */}
+            {showFriendRequests && (
+                <FriendRequestsPanel
+                    socket={socket}
+                    currentUser={user}
+                    onClose={() => {
+                        setShowFriendRequests(false);
+                        setFriendRequestCount(0);
+                    }}
+                    onFriendAdded={() => {
+                        fetchFriends();
+                        setFriendRequestCount(prev => Math.max(0, prev - 1));
+                    }}
+                />
+            )}
+
+            {/* Group Invite Modal — show one invite at a time */}
+            {pendingGroupInvites.length > 0 && (
+                <GroupInviteModal
+                    invite={pendingGroupInvites[0]}
+                    onAccept={handleGroupInviteAccept}
+                    onDecline={handleGroupInviteDecline}
+                    onClose={handleGroupInviteDecline}
+                />
+            )}
+
+            {/* Current User Profile Modal */}
+            {showMyProfile && (
+                <UserInfoModal
+                    user={user}
+                    currentUser={user}
+                    socket={socket}
+                    onClose={() => setShowMyProfile(false)}
+                />
+            )}
         </div>
     );
 }

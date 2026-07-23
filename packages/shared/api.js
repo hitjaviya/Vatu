@@ -112,6 +112,7 @@ export const authAPI = {
 // Users API
 export const usersAPI = {
     getAll: () => api.get('/users'),
+    search: (q) => api.get('/users/search', { params: { q } }),
     getById: (userId) => api.get(`/users/${userId}`),
     updateProfile: (data) => api.patch('/users/profile', data),
     updateStatus: (status) => api.patch('/users/status', { status }),
@@ -169,6 +170,43 @@ export const groupsAPI = {
     getMessagesByBucket: (groupId, bucketNumber) => api.get(`/groups/${groupId}/bucket/${bucketNumber}`),
     addMember: (groupId, userId) => api.post(`/groups/${groupId}/members`, { userId }),
     removeMember: (groupId, userId) => api.delete(`/groups/${groupId}/members/${userId}`),
+    // Group invite endpoints
+    getInvites: () => api.get('/groups/invites'),
+    acceptInvite: (inviteId) => api.patch(`/groups/invites/${inviteId}/accept`),
+    declineInvite: (inviteId) => api.patch(`/groups/invites/${inviteId}/decline`),
+};
+
+// Friends API
+export const friendsAPI = {
+    getAll: () => api.get('/friends'),
+    getRequests: () => api.get('/friends/requests'),
+    getSent: () => api.get('/friends/sent'),
+    getStatus: (userId) => api.get(`/friends/status/${userId}`),
+    sendRequest: (userId) => api.post(`/friends/request/${userId}`),
+    acceptRequest: (requestId) => api.patch(`/friends/request/${requestId}/accept`),
+    declineRequest: (requestId) => api.patch(`/friends/request/${requestId}/decline`),
+    remove: (userId) => api.delete(`/friends/${userId}`),
+};
+
+
+
+// Themes API — per-conversation backgrounds
+export const themesAPI = {
+    getConversationTheme: (otherId) => api.get(`/themes/conversation/${otherId}`),
+    setConversationTheme: (otherId, theme) => api.put(`/themes/conversation/${otherId}`, { theme }),
+    getGroupTheme: (groupId) => api.get(`/themes/group/${groupId}`),
+    setGroupTheme: (groupId, theme) => api.put(`/themes/group/${groupId}`, { theme }),
+};
+
+// Tasks API — AI-extracted and manually created tasks from conversations
+export const tasksAPI = {
+    extractFromConversation: (conversationId, conversationType) =>
+        api.post('/ai/extract-tasks', { conversationId, conversationType }),
+    getByConversation: (conversationId) =>
+        api.get(`/ai/tasks/${conversationId}`),
+    create:  (data)                  => api.post('/ai/tasks', data),
+    update:  (taskId, data)          => api.patch(`/ai/tasks/${taskId}`, data),
+    remove:  (taskId, isAdmin=false) => api.delete(`/ai/tasks/${taskId}`, { data: { isAdmin } }),
 };
 
 export default api;

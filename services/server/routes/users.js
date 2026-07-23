@@ -18,6 +18,27 @@ router.get('/', authenticate, async (req, res) => {
     }
 });
 
+// Search users by username
+router.get('/search', authenticate, async (req, res) => {
+    try {
+        const q = (req.query.q || '').trim();
+        if (!q) return res.json({ users: [] });
+
+        const users = await User.find({
+            _id: { $ne: req.user._id },
+            username: { $regex: q, $options: 'i' }
+        })
+            .select('-password')
+            .limit(10)
+            .sort({ username: 1 });
+
+        res.json({ users });
+    } catch (error) {
+        console.error('Error searching users:', error);
+        res.status(500).json({ error: 'Failed to search users' });
+    }
+});
+
 // Get user by ID
 router.get('/:userId', authenticate, async (req, res) => {
     try {

@@ -3,23 +3,38 @@ import { getInitials } from './utils/messageHelpers';
 
 /**
  * ChatHeader — top bar with avatar, name, member count, search button.
+ * Clicking the avatar opens UserInfoModal.
  */
-function ChatHeader({ selectedChat, showSearch, onToggleSearch }) {
+function ChatHeader({ selectedChat, showSearch, onToggleSearch, onAvatarClick }) {
     const { data, type } = selectedChat;
     const displayName = data.username || data.name || 'Unknown';
 
     return (
         <div className="chat-header">
             <div className="chat-header-info">
-                <div className="chat-header-avatar">
+                <div
+                    className="chat-header-avatar"
+                    onClick={() => type === 'user' && onAvatarClick && onAvatarClick(data)}
+                    style={type === 'user' ? { cursor: 'pointer' } : {}}
+                    title={type === 'user' ? `View ${displayName}'s profile` : undefined}
+                >
                     {data.avatar ? (
                         <img src={data.avatar} alt={displayName} />
                     ) : (
                         <span>{getInitials(displayName)}</span>
                     )}
+                    {/* Online indicator for private chats */}
+                    {type === 'user' && (
+                        <div className="chat-header-status-dot" />
+                    )}
                 </div>
                 <div>
-                    <h2>{displayName}</h2>
+                    <h2
+                        className={type === 'user' ? 'chat-header-name-clickable' : ''}
+                        onClick={() => type === 'user' && onAvatarClick && onAvatarClick(data)}
+                    >
+                        {displayName}
+                    </h2>
                     {type === 'group' && (
                         <p>{data.members?.length || 0} members</p>
                     )}

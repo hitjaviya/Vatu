@@ -20,6 +20,7 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
     const [fileDetailMsg, setFileDetailMsg] = useState(null);
     const [fileDetailMeta, setFileDetailMeta] = useState(null);
     const [fileDetailLoading, setFileDetailLoading] = useState(false);
+    const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
     // Context menu state
     const [contextMenu, setContextMenu] = useState(null); // { x, y, message }
@@ -323,6 +324,9 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
             if (container.scrollTop < 80 && !loadingOlder && hasMoreMessages) {
                 loadOlderMessages();
             }
+            // Show scroll-to-bottom button when user is more than 200px away from bottom
+            const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+            setShowScrollToBottom(distanceFromBottom > 200);
         };
 
         container.addEventListener('scroll', handleScroll, { passive: true });
@@ -1296,6 +1300,21 @@ function ChatWindow({ selectedChat, currentUser, socket, onRefreshGroups, isWind
                     </div>
                 )}
             </div>
+
+            {/* Scroll to Bottom Button */}
+            {showScrollToBottom && (
+                <button
+                    className="scroll-to-bottom-btn"
+                    onClick={scrollToBottom}
+                    title="Go to latest messages"
+                    aria-label="Scroll to bottom"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                    <span>Latest</span>
+                </button>
+            )}
 
             {/* Input */}
             <div className="message-input-container">

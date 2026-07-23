@@ -2,10 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { usersAPI } from '@chat-app/shared/api';
 import './Settings.css';
 
+// CDN base URL for theme backgrounds (set VITE_CDN_URL in .env to your CloudFront domain)
+// Falls back to local /public/assets in development
+const CDN_BASE = import.meta.env.VITE_CDN_URL
+    ? `https://${import.meta.env.VITE_CDN_URL.replace(/^https?:\/\//, '').replace(/\/$/, '')}/themes/backgrounds`
+    : '/assets/backgrounds';
+
 const THEMES = {
     valentine: {
         name: '💕 Valentine',
-        background: 'url(/assets/backgrounds/valentine.png)',
+        background: `url(${CDN_BASE}/valentine.png)`,
         accent: '#ec4899',
         sent: '#ec4899',
         received: '#2d2d2d',
@@ -13,7 +19,7 @@ const THEMES = {
     },
     school: {
         name: '📚 School',
-        background: 'url(/assets/backgrounds/school.png)',
+        background: `url(${CDN_BASE}/school.png)`,
         accent: '#3b82f6',
         sent: '#3b82f6',
         received: '#2d2d2d',
@@ -21,7 +27,7 @@ const THEMES = {
     },
     chill: {
         name: '🌊 Chill',
-        background: 'url(/assets/backgrounds/chill.png)',
+        background: `url(${CDN_BASE}/chill.png)`,
         accent: '#06b6d4',
         sent: '#06b6d4',
         received: '#2d2d2d',
@@ -29,7 +35,7 @@ const THEMES = {
     },
     dark: {
         name: '🌙 Dark',
-        background: 'url(/assets/backgrounds/dark.png)',
+        background: `url(${CDN_BASE}/dark.png)`,
         accent: '#8b5cf6',
         sent: '#6366f1',
         received: '#27272a',
@@ -37,7 +43,7 @@ const THEMES = {
     },
     nature: {
         name: '🌿 Nature',
-        background: 'url(/assets/backgrounds/nature.png)',
+        background: `url(${CDN_BASE}/nature.png)`,
         accent: '#10b981',
         sent: '#10b981',
         received: '#2d2d2d',
@@ -45,7 +51,7 @@ const THEMES = {
     },
     sunset: {
         name: '🌅 Sunset',
-        background: 'url(/assets/backgrounds/sunset.png)',
+        background: `url(${CDN_BASE}/sunset.png)`,
         accent: '#f97316',
         sent: '#f97316',
         received: '#2d2d2d',
@@ -64,14 +70,8 @@ function Settings({ isOpen, onClose, currentUser }) {
     const [showPassword, setShowPassword] = useState(false);
 
     useEffect(() => {
-        const saved = localStorage.getItem('chatTheme');
-        if (saved) {
-            const theme = JSON.parse(saved);
-            setSelectedTheme(theme.name);
-            applyTheme(theme.name);
-        }
         if (currentUser?.email) {
-            setEmail('');  // Clear to show masked placeholder
+            setEmail('');
         }
     }, [currentUser]);
 
@@ -96,10 +96,11 @@ function Settings({ isOpen, onClose, currentUser }) {
         if (!theme) return;
 
         const root = document.documentElement;
+        root.style.setProperty('--chat-bg-image', theme.background);
+        root.style.setProperty('--chat-bg-color', theme.received);
         root.style.setProperty('--accent-primary', theme.accent);
         root.style.setProperty('--message-sent', theme.sent);
         root.style.setProperty('--message-received', theme.received);
-        root.style.setProperty('--chat-background', theme.background);
 
         localStorage.setItem('chatTheme', JSON.stringify({
             name: themeName,

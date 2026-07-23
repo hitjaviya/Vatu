@@ -62,8 +62,10 @@
   --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* Chat Background */
-  --chat-background: linear-gradient(135deg, #0f0f0f 0%, #1a1625 50%, #0f0f0f 100%);
+  /* Chat Background — split into image + color so browser doesn't reset
+     background-size/position when the shorthand 'background' is used. */
+  --chat-bg-image: none;
+  --chat-bg-color: #0f0f0f;
 }
 
 body {
