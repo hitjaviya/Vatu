@@ -1,7 +1,7 @@
 {
-  "name": "chat-app",
-  "version": "1.0.0",
-  "description": "Cross-platform chat application — monorepo",
+  "name": "vatu",
+  "version": "1.1.0",
+  "description": "Vatu — Cross-platform chat application (monorepo)",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -12,10 +12,17 @@
     "dev:server":    "npm run dev   --workspace=services/server",
     "dev:desktop":   "npm run dev   --workspace=apps/desktop",
     "dev:web":       "npm run dev   --workspace=apps/web",
+    "dev:mobile":    "npm run dev   --workspace=apps/mobile",
     "dev:all":       "concurrently \"npm run dev:server\" \"npm run dev:desktop\"",
     "build:desktop": "npm run build --workspace=apps/desktop",
+    "build:desktop:linux": "npm run build:linux --workspace=apps/desktop",
+    "build:desktop:win":   "npm run build:win   --workspace=apps/desktop",
+    "build:desktop:mac":   "npm run build:mac   --workspace=apps/desktop",
     "build:web":     "npm run build --workspace=apps/web",
-    "start:server":  "npm run start --workspace=services/server"
+    "start:server":  "npm run start --workspace=services/server",
+    "mobile:start":  "npm run start --workspace=apps/mobile",
+    "mobile:android":"npm run android --workspace=apps/mobile",
+    "mobile:ios":    "npm run ios   --workspace=apps/mobile"
   },
   "keywords": [
     "chat",
